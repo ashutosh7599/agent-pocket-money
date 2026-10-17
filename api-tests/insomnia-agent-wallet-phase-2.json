@@ -1,0 +1,246 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2026-10-17T18:37:21Z",
+  "__export_source": "insomnia.desktop.app:v10.0.0",
+  "resources": [
+    {
+      "_id": "wrk_agent_wallet_phase_2",
+      "_type": "workspace",
+      "name": "Agent Wallet - Phase 2 API Smoke Suite",
+      "description": "Runnable Insomnia suite for wallet creation, top-up, balance, history, idempotency, and validation.",
+      "scope": "collection"
+    },
+    {
+      "_id": "env_agent_wallet_base",
+      "_type": "environment",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "Base Environment",
+      "data": {
+        "base_url": "http://localhost:8080",
+        "topup_amount_minor_units": 65000,
+        "conflicting_topup_amount_minor_units": 65001
+      }
+    },
+    {
+      "_id": "req_create_wallet",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "01 - Create a wallet",
+      "description": "Run as part of the collection in listed order.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/v1/wallets",
+      "body": {},
+      "headers": [],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "insomnia.test('returns 201 Created', () => {\n  insomnia.expect(insomnia.response.code).to.eql(201);\n});\nconst wallet = insomnia.response.json();\ninsomnia.test('creates an active INR wallet with zero balance', () => {\n  insomnia.expect(wallet.status).to.eql('ACTIVE');\n  insomnia.expect(wallet.currency).to.eql('INR');\n  insomnia.expect(wallet.balanceMinorUnits).to.eql(0);\n  insomnia.expect(wallet.id).to.be.a('string');\n});\ninsomnia.environment.set('wallet_id', wallet.id);\ninsomnia.environment.set('topup_idempotency_key', 'insomnia-smoke-' + wallet.id);",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792262241571,
+      "created": 1792262241571
+    },
+    {
+      "_id": "req_get_new_wallet",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "02 - Read the new wallet",
+      "description": "Run as part of the collection in listed order.",
+      "method": "GET",
+      "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}",
+      "body": {},
+      "headers": [],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "insomnia.test('returns 200 OK', () => {\n  insomnia.expect(insomnia.response.code).to.eql(200);\n});\nconst wallet = insomnia.response.json();\ninsomnia.test('wallet starts with zero balance', () => {\n  insomnia.expect(wallet.id).to.eql(insomnia.environment.get('wallet_id'));\n  insomnia.expect(wallet.balanceMinorUnits).to.eql(0);\n  insomnia.expect(wallet.status).to.eql('ACTIVE');\n});",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792262241572,
+      "created": 1792262241572
+    },
+    {
+      "_id": "req_topup",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "03 - Top up the wallet",
+      "description": "Run as part of the collection in listed order.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/top-ups",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"amountMinorUnits\": {{ _.topup_amount_minor_units }}\n}"
+      },
+      "headers": [
+        {
+          "name": "Idempotency-Key",
+          "value": "{{ _.topup_idempotency_key }}"
+        },
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "insomnia.test('returns 200 OK', () => {\n  insomnia.expect(insomnia.response.code).to.eql(200);\n});\nconst result = insomnia.response.json();\ninsomnia.test('funds the wallet with the configured amount', () => {\n  insomnia.expect(result.walletId).to.eql(insomnia.environment.get('wallet_id'));\n  insomnia.expect(result.amountMinorUnits).to.eql(Number(insomnia.environment.get('topup_amount_minor_units')));\n  insomnia.expect(result.currency).to.eql('INR');\n  insomnia.expect(result.journalEntryId).to.be.a('string');\n});\ninsomnia.environment.set('topup_id', result.id);\ninsomnia.environment.set('topup_journal_entry_id', result.journalEntryId);\ninsomnia.environment.set('topup_transaction_reference', result.transactionReference);",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792262241573,
+      "created": 1792262241573
+    },
+    {
+      "_id": "req_topup_retry",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "04 - Retry the same top up (idempotency)",
+      "description": "Run as part of the collection in listed order.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/top-ups",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"amountMinorUnits\": {{ _.topup_amount_minor_units }}\n}"
+      },
+      "headers": [
+        {
+          "name": "Idempotency-Key",
+          "value": "{{ _.topup_idempotency_key }}"
+        },
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "insomnia.test('returns the original top-up result', () => {\n  insomnia.expect(insomnia.response.code).to.eql(200);\n});\nconst result = insomnia.response.json();\ninsomnia.test('retry is idempotent', () => {\n  insomnia.expect(result.id).to.eql(insomnia.environment.get('topup_id'));\n  insomnia.expect(result.journalEntryId).to.eql(insomnia.environment.get('topup_journal_entry_id'));\n});",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792262241574,
+      "created": 1792262241574
+    },
+    {
+      "_id": "req_get_funded_wallet",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "05 - Verify the funded balance",
+      "description": "Run as part of the collection in listed order.",
+      "method": "GET",
+      "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}",
+      "body": {},
+      "headers": [],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "insomnia.test('returns 200 OK', () => {\n  insomnia.expect(insomnia.response.code).to.eql(200);\n});\nconst wallet = insomnia.response.json();\ninsomnia.test('balance matches the top-up amount', () => {\n  insomnia.expect(wallet.balanceMinorUnits).to.eql(Number(insomnia.environment.get('topup_amount_minor_units')));\n  insomnia.expect(wallet.currency).to.eql('INR');\n});",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792262241575,
+      "created": 1792262241575
+    },
+    {
+      "_id": "req_transactions",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "06 - Verify transaction history",
+      "description": "Run as part of the collection in listed order.",
+      "method": "GET",
+      "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/transactions?page=0&size=20",
+      "body": {},
+      "headers": [],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "insomnia.test('returns 200 OK', () => {\n  insomnia.expect(insomnia.response.code).to.eql(200);\n});\nconst page = insomnia.response.json();\ninsomnia.test('history contains one balanced top-up posting for the fresh wallet', () => {\n  insomnia.expect(page.totalElements).to.eql(1);\n  insomnia.expect(page.transactions[0].journalEntryId).to.eql(insomnia.environment.get('topup_journal_entry_id'));\n  insomnia.expect(page.transactions[0].transactionReference).to.eql(insomnia.environment.get('topup_transaction_reference'));\n  insomnia.expect(page.transactions[0].side).to.eql('CREDIT');\n  insomnia.expect(page.transactions[0].amountMinorUnits).to.eql(Number(insomnia.environment.get('topup_amount_minor_units')));\n});",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792262241576,
+      "created": 1792262241576
+    },
+    {
+      "_id": "req_idempotency_conflict",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "07 - Reject idempotency key reuse with a different amount",
+      "description": "Run as part of the collection in listed order.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/top-ups",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"amountMinorUnits\": {{ _.conflicting_topup_amount_minor_units }}\n}"
+      },
+      "headers": [
+        {
+          "name": "Idempotency-Key",
+          "value": "{{ _.topup_idempotency_key }}"
+        },
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "insomnia.test('returns 409 Conflict', () => {\n  insomnia.expect(insomnia.response.code).to.eql(409);\n});\nconst problem = insomnia.response.json();\ninsomnia.test('returns the typed idempotency error', () => {\n  insomnia.expect(problem.errorCode).to.eql('IDEMPOTENCY_KEY_REUSED');\n});",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792262241577,
+      "created": 1792262241577
+    },
+    {
+      "_id": "req_invalid_page_size",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "08 - Reject an invalid transaction page size",
+      "description": "Run as part of the collection in listed order.",
+      "method": "GET",
+      "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/transactions?page=0&size=101",
+      "body": {},
+      "headers": [],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "insomnia.test('returns 400 Bad Request', () => {\n  insomnia.expect(insomnia.response.code).to.eql(400);\n});\nconst problem = insomnia.response.json();\ninsomnia.test('returns a safe validation error', () => {\n  insomnia.expect(problem.errorCode).to.eql('INVALID_WALLET_REQUEST');\n  insomnia.expect(problem.detail).to.be.a('string');\n});",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792262241578,
+      "created": 1792262241578
+    }
+  ]
+}
