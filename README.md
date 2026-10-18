@@ -104,11 +104,17 @@ For local signature generation, set the same secret in your shell and use Python
 - `POST /api/v1/reconciliation/mock-batches?scenario=MATCH` generates a matching report. Use `MISSING`, `AMOUNT_MISMATCH`, `STATUS_MISMATCH`, or `UNKNOWN_PAYMENT` to exercise break detection.
 - `GET /api/v1/reconciliation/batches/{batchId}` reads a persisted batch; `GET /api/v1/reconciliation/batches/{batchId}/breaks` returns its stored breaks.
 
+## Phase 10 security and audit
+
+All `/api/v1/**` endpoints require an API key in the `X-API-Key` header. Configure keys only in the runtime environment using `WALLET_API_KEYS` with comma-separated `key:ROLE[:wallet-uuid]` entries. `ADMIN` keys can administer wallets, funding, policies, audit queries, and reconciliation. `AGENT` keys must include one wallet UUID and can operate only on that wallet's payment and hold endpoints. `WEBHOOK` keys are limited to the mock gateway webhook receiver. Keep these values in a local secret manager or untracked environment file; never commit them.
+
+Successful wallet, hold, payment, policy, and reconciliation operations write append-only audit rows with the actor key fingerprint, action, entity ID, trace ID, and timestamp. Admins can inspect them at `GET /api/v1/admin/audit-events?page=0&size=20`.
+
 ## Run the API smoke suite in Insomnia
 
 Import [`api-tests/insomnia-agent-wallet-phase-2.json`](api-tests/insomnia-agent-wallet-phase-2.json) into Insomnia, open the imported collection, choose **Run Collection**, keep all requests selected in order, and click **Run**. The suite creates a wallet, funds it, verifies ledger and available balances, creates, lists, and releases a hold, checks policy setup, payment authorization, capture, partial/full refund, gateway outcomes, and idempotency, insufficient available balance, and invalid requests. The collection saves generated wallet and idempotency values between requests.
 
-The included environment targets `http://localhost:8080` and funds the wallet with 65000 minor units (₹650.00). Change `base_url` if the app uses a different port. Each run creates new sandbox data in PostgreSQL; no real money is moved. See [`api-tests/README.md`](api-tests/README.md) for setup details.
+The included environment targets `http://localhost:8080`, includes a blank `api_key` variable, and funds the wallet with 65000 minor units (₹650.00). Set `api_key` to an admin key for the full suite and change `base_url` if the app uses a different port. Each run creates new sandbox data in PostgreSQL; no real money is moved. See [`api-tests/README.md`](api-tests/README.md) for setup details.
 
 ## Logging and exception handling
 

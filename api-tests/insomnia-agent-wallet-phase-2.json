@@ -19,7 +19,8 @@
       "data": {
         "base_url": "http://localhost:8080",
         "topup_amount_minor_units": 65000,
-        "conflicting_topup_amount_minor_units": 65001
+        "conflicting_topup_amount_minor_units": 65001,
+        "api_key": ""
       }
     },
     {
@@ -31,7 +32,12 @@
       "method": "POST",
       "url": "{{ _.base_url }}/api/v1/wallets",
       "body": {},
-      "headers": [],
+      "headers": [
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
+        }
+      ],
       "parameters": [],
       "authentication": {},
       "preRequestScript": "",
@@ -54,7 +60,12 @@
       "method": "GET",
       "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}",
       "body": {},
-      "headers": [],
+      "headers": [
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
+        }
+      ],
       "parameters": [],
       "authentication": {},
       "preRequestScript": "",
@@ -88,6 +99,10 @@
         {
           "name": "Content-Type",
           "value": "application/json"
+        },
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
         }
       ],
       "parameters": [],
@@ -123,6 +138,10 @@
         {
           "name": "Content-Type",
           "value": "application/json"
+        },
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
         }
       ],
       "parameters": [],
@@ -147,7 +166,12 @@
       "method": "GET",
       "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}",
       "body": {},
-      "headers": [],
+      "headers": [
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
+        }
+      ],
       "parameters": [],
       "authentication": {},
       "preRequestScript": "",
@@ -170,7 +194,12 @@
       "method": "GET",
       "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/transactions?page=0&size=20",
       "body": {},
-      "headers": [],
+      "headers": [
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
+        }
+      ],
       "parameters": [],
       "authentication": {},
       "preRequestScript": "",
@@ -204,6 +233,10 @@
         {
           "name": "Content-Type",
           "value": "application/json"
+        },
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
         }
       ],
       "parameters": [],
@@ -228,7 +261,12 @@
       "method": "GET",
       "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/transactions?page=0&size=101",
       "body": {},
-      "headers": [],
+      "headers": [
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
+        }
+      ],
       "parameters": [],
       "authentication": {},
       "preRequestScript": "",
@@ -258,6 +296,10 @@
         {
           "name": "Content-Type",
           "value": "application/json"
+        },
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
         }
       ],
       "parameters": [],
@@ -282,7 +324,12 @@
       "method": "GET",
       "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/holds?status=ACTIVE&page=0&size=20",
       "body": {},
-      "headers": [],
+      "headers": [
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
+        }
+      ],
       "parameters": [],
       "authentication": {},
       "preRequestScript": "",
@@ -312,6 +359,10 @@
         {
           "name": "Content-Type",
           "value": "application/json"
+        },
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
         }
       ],
       "parameters": [],
@@ -336,7 +387,12 @@
       "method": "GET",
       "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}",
       "body": {},
-      "headers": [],
+      "headers": [
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
+        }
+      ],
       "parameters": [],
       "authentication": {},
       "preRequestScript": "",
@@ -359,7 +415,12 @@
       "method": "POST",
       "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/holds/{{ _.hold_id }}/release",
       "body": {},
-      "headers": [],
+      "headers": [
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
+        }
+      ],
       "parameters": [],
       "authentication": {},
       "preRequestScript": "",
@@ -382,7 +443,12 @@
       "method": "GET",
       "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}",
       "body": {},
-      "headers": [],
+      "headers": [
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
+        }
+      ],
       "parameters": [],
       "authentication": {},
       "preRequestScript": "",
@@ -412,6 +478,10 @@
         {
           "name": "Content-Type",
           "value": "application/json"
+        },
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
         }
       ],
       "parameters": [],
@@ -447,6 +517,10 @@
         {
           "name": "Idempotency-Key",
           "value": "{{ _.payment_idempotency_key }}"
+        },
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
         }
       ],
       "parameters": [],
@@ -482,6 +556,10 @@
         {
           "name": "Idempotency-Key",
           "value": "{{ _.payment_idempotency_key }}"
+        },
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
         }
       ],
       "parameters": [],
@@ -506,7 +584,12 @@
       "method": "POST",
       "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/payments/{{ _.payment_id }}/authorize",
       "body": {},
-      "headers": [],
+      "headers": [
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
+        }
+      ],
       "parameters": [],
       "authentication": {},
       "preRequestScript": "",
@@ -529,7 +612,12 @@
       "method": "GET",
       "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}",
       "body": {},
-      "headers": [],
+      "headers": [
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
+        }
+      ],
       "parameters": [],
       "authentication": {},
       "preRequestScript": "",
@@ -556,6 +644,10 @@
         {
           "name": "Idempotency-Key",
           "value": "{{ _.payment_idempotency_key }}-capture"
+        },
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
         }
       ],
       "parameters": [],
@@ -580,7 +672,12 @@
       "method": "GET",
       "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}",
       "body": {},
-      "headers": [],
+      "headers": [
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
+        }
+      ],
       "parameters": [],
       "authentication": {},
       "preRequestScript": "",
@@ -614,6 +711,10 @@
         {
           "name": "Content-Type",
           "value": "application/json"
+        },
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
         }
       ],
       "parameters": [],
@@ -638,7 +739,12 @@
       "method": "GET",
       "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/payments/{{ _.payment_id }}",
       "body": {},
-      "headers": [],
+      "headers": [
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
+        }
+      ],
       "parameters": [],
       "authentication": {},
       "preRequestScript": "",
@@ -672,6 +778,10 @@
         {
           "name": "Content-Type",
           "value": "application/json"
+        },
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
         }
       ],
       "parameters": [],
@@ -696,7 +806,12 @@
       "method": "GET",
       "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/payments/{{ _.payment_id }}",
       "body": {},
-      "headers": [],
+      "headers": [
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
+        }
+      ],
       "parameters": [],
       "authentication": {},
       "preRequestScript": "",
@@ -719,7 +834,12 @@
       "method": "GET",
       "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}",
       "body": {},
-      "headers": [],
+      "headers": [
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
+        }
+      ],
       "parameters": [],
       "authentication": {},
       "preRequestScript": "",
@@ -753,6 +873,10 @@
         {
           "name": "Content-Type",
           "value": "application/json"
+        },
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
         }
       ],
       "parameters": [],
@@ -777,7 +901,12 @@
       "method": "POST",
       "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/payments/{{ _.issuer_decline_payment_id }}/authorize",
       "body": {},
-      "headers": [],
+      "headers": [
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
+        }
+      ],
       "parameters": [],
       "authentication": {},
       "preRequestScript": "",
@@ -811,6 +940,10 @@
         {
           "name": "Content-Type",
           "value": "application/json"
+        },
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
         }
       ],
       "parameters": [],
@@ -835,7 +968,12 @@
       "method": "POST",
       "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/payments/{{ _.gateway_timeout_payment_id }}/authorize",
       "body": {},
-      "headers": [],
+      "headers": [
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
+        }
+      ],
       "parameters": [],
       "authentication": {},
       "preRequestScript": "",
@@ -869,6 +1007,10 @@
         {
           "name": "Content-Type",
           "value": "application/json"
+        },
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
         }
       ],
       "parameters": [],
@@ -893,7 +1035,12 @@
       "method": "POST",
       "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/payments/{{ _.otp_challenge_payment_id }}/authorize",
       "body": {},
-      "headers": [],
+      "headers": [
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
+        }
+      ],
       "parameters": [],
       "authentication": {},
       "preRequestScript": "",
@@ -919,7 +1066,12 @@
         "mimeType": "application/json",
         "text": ""
       },
-      "headers": [],
+      "headers": [
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
+        }
+      ],
       "parameters": [],
       "authentication": {},
       "preRequestScript": "",
@@ -945,7 +1097,12 @@
         "mimeType": "application/json",
         "text": ""
       },
-      "headers": [],
+      "headers": [
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
+        }
+      ],
       "parameters": [],
       "authentication": {},
       "preRequestScript": "",
@@ -971,7 +1128,12 @@
         "mimeType": "application/json",
         "text": ""
       },
-      "headers": [],
+      "headers": [
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
+        }
+      ],
       "parameters": [],
       "authentication": {},
       "preRequestScript": "",
@@ -986,5 +1148,5 @@
       "created": 1792320000000
     }
   ],
-  "_export_date": "2026-10-18T13:11:59.820539Z"
+  "_export_date": "2026-10-18T13:14:32.965833Z"
 }

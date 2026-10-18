@@ -32,6 +32,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.agentpocketmoney.agentwallet.audit.Audited;
 
 @Service
 public class PaymentService {
@@ -57,12 +58,14 @@ public class PaymentService {
     }
 
     @Transactional
+    @Audited(action="PAYMENT_CREATED",entityType="payment")
     public Payment create(UUID walletId, String idempotencyKey, String merchantId, long amountMinorUnits,
                           String category, String purpose) {
         return create(walletId,idempotencyKey,merchantId,amountMinorUnits,category,purpose,GatewayScenario.APPROVE);
     }
 
     @Transactional
+    @Audited(action="PAYMENT_CREATED",entityType="payment")
     public Payment create(UUID walletId, String idempotencyKey, String merchantId, long amountMinorUnits,
                           String category, String purpose, GatewayScenario gatewayScenario) {
         validateCreate(idempotencyKey, merchantId, amountMinorUnits, category, purpose);
@@ -90,6 +93,7 @@ public class PaymentService {
     }
 
     @Transactional
+    @Audited(action="PAYMENT_AUTHORIZED",entityType="payment")
     public Payment authorize(UUID walletId, UUID paymentId) {
         Wallet wallet=lockWallet(walletId);
         ensureActive(wallet);
@@ -139,6 +143,7 @@ public class PaymentService {
     }
 
     @Transactional
+    @Audited(action="PAYMENT_CAPTURED",entityType="payment")
     public Payment capture(UUID walletId, UUID paymentId, String idempotencyKey) {
         requireIdempotencyKey(idempotencyKey);
         Wallet wallet=lockWallet(walletId);
@@ -174,6 +179,7 @@ public class PaymentService {
     }
 
     @Transactional
+    @Audited(action="PAYMENT_VOIDED",entityType="payment")
     public Payment voidPayment(UUID walletId, UUID paymentId, String idempotencyKey) {
         requireIdempotencyKey(idempotencyKey);
         lockWallet(walletId);
@@ -200,6 +206,7 @@ public class PaymentService {
     }
 
     @Transactional
+    @Audited(action="PAYMENT_REFUNDED",entityType="payment_refund")
     public PaymentRefund refund(UUID walletId, UUID paymentId, String idempotencyKey, long amountMinorUnits) {
         requireIdempotencyKey(idempotencyKey);
         if (amountMinorUnits<=0) throw new WalletException(WalletErrorCode.INVALID_WALLET_REQUEST,"Refund amount must be positive.");

@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.util.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.agentpocketmoney.agentwallet.audit.Audited;
 
 @Service
 public class ReconciliationService {
@@ -28,6 +29,7 @@ public class ReconciliationService {
     }
 
     @Transactional
+    @Audited(action="RECONCILIATION_COMPLETED",entityType="reconciliation_batch")
     public ReconciliationBatch reconcile(List<SettlementReportRow> report) {
         if (report == null) throw invalid("Settlement report is required.");
         Instant now=clock.instant(); UUID batchId=UUID.randomUUID();
@@ -63,6 +65,7 @@ public class ReconciliationService {
     }
 
     @Transactional
+    @Audited(action="MOCK_RECONCILIATION_COMPLETED",entityType="reconciliation_batch")
     public ReconciliationBatch generateMockReport(MockReportScenario scenario) {
         List<Payment> expected=payments.findByStatusIn(SETTLEABLE);
         List<SettlementReportRow> report=new ArrayList<>();

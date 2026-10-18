@@ -16,6 +16,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.agentpocketmoney.agentwallet.audit.Audited;
 
 @Service
 public class WalletPolicyService {
@@ -28,6 +29,7 @@ public class WalletPolicyService {
      PaymentRepository payments,Clock clock){this.wallets=wallets;this.rules=rules;this.evaluations=evaluations;this.payments=payments;this.clock=clock;}
 
  @Transactional
+ @Audited(action="WALLET_POLICY_REPLACED",entityType="wallet")
  public WalletPolicyResponse replace(UUID walletId,WalletPolicyRequest request){
   Wallet wallet=wallets.findByIdForUpdate(walletId).orElseThrow(()->new WalletException(
       WalletErrorCode.WALLET_NOT_FOUND,"Wallet not found."));

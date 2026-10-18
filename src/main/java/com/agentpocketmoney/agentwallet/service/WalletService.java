@@ -11,6 +11,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.agentpocketmoney.agentwallet.audit.Audited;
 
 import com.agentpocketmoney.agentwallet.model.ledger.AccountType;
 import com.agentpocketmoney.agentwallet.model.ledger.JournalEntry;
@@ -63,6 +64,7 @@ public class WalletService {
     }
 
     @Transactional
+    @Audited(action="WALLET_CREATED",entityType="wallet")
     public WalletResponseView createWallet() {
         UUID walletId = UUID.randomUUID();
         LedgerAccount walletLedgerAccount = ledger.createAccount(
@@ -87,6 +89,7 @@ public class WalletService {
     }
 
     @Transactional
+    @Audited(action="HOLD_CREATED",entityType="authorization_hold")
     public AuthorizationHold createHold(UUID walletId, long amountMinorUnits, Instant expiresAt) {
         Instant now = clock.instant();
         if (amountMinorUnits <= 0 || expiresAt == null || !expiresAt.isAfter(now)) {
@@ -122,6 +125,7 @@ public class WalletService {
     }
 
     @Transactional
+    @Audited(action="HOLD_RELEASED",entityType="authorization_hold")
     public AuthorizationHold releaseHold(UUID walletId, UUID holdId) {
         lockWallet(walletId);
         Instant now = clock.instant();
@@ -163,6 +167,7 @@ public class WalletService {
     }
 
     @Transactional
+    @Audited(action="WALLET_TOP_UP",entityType="top_up")
     public TopUpResult topUp(UUID walletId, String idempotencyKey, long amountMinorUnits) {
         validateTopUp(idempotencyKey, amountMinorUnits);
         Wallet wallet = wallets.findByIdForUpdate(walletId)
