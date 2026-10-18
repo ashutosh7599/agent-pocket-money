@@ -7,10 +7,17 @@ import com.agentpocketmoney.agentwallet.model.wallet.AuthorizationHold;
 import com.agentpocketmoney.agentwallet.model.wallet.AuthorizationHoldStatus;
 import com.agentpocketmoney.agentwallet.model.wallet.Payment;
 import com.agentpocketmoney.agentwallet.model.wallet.PaymentStatus;
+import com.agentpocketmoney.agentwallet.model.wallet.PaymentRefund;
+import com.agentpocketmoney.agentwallet.model.ledger.AccountType;
+import com.agentpocketmoney.agentwallet.model.ledger.LedgerAccount;
+import com.agentpocketmoney.agentwallet.model.ledger.LedgerPostingLine;
+import com.agentpocketmoney.agentwallet.model.ledger.PostingSide;
 import com.agentpocketmoney.agentwallet.model.wallet.Wallet;
 import com.agentpocketmoney.agentwallet.model.wallet.WalletStatus;
 import com.agentpocketmoney.agentwallet.repository.AuthorizationHoldRepository;
 import com.agentpocketmoney.agentwallet.repository.PaymentRepository;
+import com.agentpocketmoney.agentwallet.repository.PaymentRefundRepository;
+import com.agentpocketmoney.agentwallet.repository.LedgerAccountRepository;
 import com.agentpocketmoney.agentwallet.repository.WalletRepository;
 import java.time.Clock;
 import java.time.Instant;
@@ -29,13 +36,16 @@ public class PaymentService {
     private final PaymentRepository payments;
     private final AuthorizationHoldRepository holds;
     private final LedgerService ledger;
+    private final PaymentRefundRepository refunds;
+    private final LedgerAccountRepository ledgerAccounts;
     private final Clock clock;
     private final long authorizationTtlSeconds;
 
-    public PaymentService(WalletRepository wallets, PaymentRepository payments, AuthorizationHoldRepository holds,
-                          LedgerService ledger, Clock clock,
+    public PaymentService(WalletRepository wallets, PaymentRepository payments, AuthorizationHoldRepository holds, PaymentRefundRepository refunds,
+                          LedgerAccountRepository ledgerAccounts, LedgerService ledger, Clock clock,
                           @Value("${payments.authorization-ttl-seconds:900}") long authorizationTtlSeconds) {
-        this.wallets=wallets; this.payments=payments; this.holds=holds; this.ledger=ledger;
+        this.wallets=wallets; this.payments=payments; this.holds=holds; this.refunds=refunds;
+        this.ledgerAccounts=ledgerAccounts; this.ledger=ledger;
         this.clock=clock; this.authorizationTtlSeconds=authorizationTtlSeconds;
     }
 
@@ -90,6 +100,111 @@ public class PaymentService {
                 .addKeyValue("amount.minor_units", payment.getAmountMinorUnits())
                 .log("Payment authorized"));
         return payment;
+    }
+
+    @Transactional
+    public Payment capture(UUID walletId, UUID paymentId, String idempotencyKey) {
+        requireIdempotencyKey(idempotencyKey);
+        Wallet wallet=lockWallet(walletId);
+        Payment payment=lockPayment(walletId,paymentId);
+        if (payment.getCaptureIdempotencyKey()!=null) {
+            if (idempotencyKey.equals(payment.getCaptureIdempotencyKey())) return payment;
+            if (payment.getStatus()==PaymentStatus.CAPTURED
+                    || payment.getStatus()==PaymentStatus.PARTIALLY_REFUNDED
+                    || payment.getStatus()==PaymentStatus.REFUNDED)
+                throw stateConflict("Payment was already captured with another idempotency key.");
+        }
+        if (payment.getStatus()!=PaymentStatus.AUTHORIZED)
+            throw stateConflict("Only an authorized payment can be captured.");
+        Instant now=clock.instant();
+        AuthorizationHold hold=holdForPayment(walletId,payment);
+        if (hold.getStatus()!=AuthorizationHoldStatus.ACTIVE || !hold.getExpiresAt().isAfter(now)) {
+            hold.expire(now);
+            payment.expire(now);
+            return payment;
+        }
+        LedgerAccount merchantAccount=ledger.createAccount("merchant-payable-"+paymentId,
+                "Merchant payable for "+payment.getMerchantId(), AccountType.LIABILITY, payment.getCurrency());
+        ledger.post("capture-"+paymentId,"Payment capture",List.of(
+                new LedgerPostingLine(wallet.getLedgerAccount().getId(), PostingSide.DEBIT, payment.getAmountMinorUnits()),
+                new LedgerPostingLine(merchantAccount.getId(), PostingSide.CREDIT, payment.getAmountMinorUnits())));
+        hold.capture(now);
+        payment.capture(merchantAccount.getId(),idempotencyKey,now);
+        AfterCommitAction.run(() -> logger.atInfo().addKeyValue("payment.id",paymentId)
+                .addKeyValue("wallet.id",walletId).addKeyValue("amount.minor_units",payment.getAmountMinorUnits())
+                .log("Payment captured"));
+        return payment;
+    }
+
+    @Transactional
+    public Payment voidPayment(UUID walletId, UUID paymentId, String idempotencyKey) {
+        requireIdempotencyKey(idempotencyKey);
+        lockWallet(walletId);
+        Payment payment=lockPayment(walletId,paymentId);
+        if (payment.getStatus()==PaymentStatus.VOIDED) {
+            if (idempotencyKey.equals(payment.getVoidIdempotencyKey())) return payment;
+            throw stateConflict("Payment was already voided with another idempotency key.");
+        }
+        if (payment.getStatus()!=PaymentStatus.AUTHORIZED)
+            throw stateConflict("Only an authorized payment can be voided.");
+        Instant now=clock.instant();
+        AuthorizationHold hold=holdForPayment(walletId,payment);
+        if (hold.getStatus()!=AuthorizationHoldStatus.ACTIVE || !hold.getExpiresAt().isAfter(now)) {
+            hold.expire(now);
+            payment.expire(now);
+            return payment;
+        }
+        hold.release(now);
+        payment.voidPayment(idempotencyKey,now);
+        AfterCommitAction.run(() -> logger.atInfo().addKeyValue("payment.id",paymentId)
+                .addKeyValue("wallet.id",walletId).log("Payment voided"));
+        return payment;
+    }
+
+    @Transactional
+    public PaymentRefund refund(UUID walletId, UUID paymentId, String idempotencyKey, long amountMinorUnits) {
+        requireIdempotencyKey(idempotencyKey);
+        if (amountMinorUnits<=0) throw new WalletException(WalletErrorCode.INVALID_WALLET_REQUEST,"Refund amount must be positive.");
+        Wallet wallet=lockWallet(walletId);
+        Payment payment=lockPayment(walletId,paymentId);
+        PaymentRefund prior=refunds.findByPaymentIdAndIdempotencyKey(paymentId,idempotencyKey).orElse(null);
+        if (prior!=null) {
+            if (prior.getAmountMinorUnits()!=amountMinorUnits)
+                throw new WalletException(WalletErrorCode.IDEMPOTENCY_KEY_REUSED,"Refund idempotency key was reused with a different amount.");
+            return prior;
+        }
+        if (payment.getStatus()!=PaymentStatus.CAPTURED && payment.getStatus()!=PaymentStatus.PARTIALLY_REFUNDED)
+            throw stateConflict("Only a captured payment can be refunded.");
+        long remaining=payment.getAmountMinorUnits()-payment.getAmountRefundedMinorUnits();
+        if (amountMinorUnits>remaining)
+            throw new WalletException(WalletErrorCode.REFUND_EXCEEDS_CAPTURED_AMOUNT,"Refund exceeds the remaining captured amount.");
+        if (payment.getMerchantLedgerAccountId()==null) throw new IllegalStateException("Captured payment has no merchant ledger account.");
+        UUID refundId=UUID.randomUUID();
+        var entry=ledger.post("refund-"+refundId,"Payment refund",List.of(
+                new LedgerPostingLine(payment.getMerchantLedgerAccountId(),PostingSide.DEBIT,amountMinorUnits),
+                new LedgerPostingLine(wallet.getLedgerAccount().getId(),PostingSide.CREDIT,amountMinorUnits)));
+        payment.refund(amountMinorUnits,clock.instant());
+        PaymentRefund refund=refunds.save(new PaymentRefund(refundId,payment,entry,idempotencyKey,amountMinorUnits,clock.instant()));
+        AfterCommitAction.run(() -> logger.atInfo().addKeyValue("payment.id",paymentId)
+                .addKeyValue("payment.refund.id",refundId).addKeyValue("amount.minor_units",amountMinorUnits)
+                .log("Payment refunded"));
+        return refund;
+    }
+
+    private Payment lockPayment(UUID walletId,UUID paymentId) {
+        return payments.findForUpdate(walletId,paymentId)
+                .orElseThrow(() -> new WalletException(WalletErrorCode.PAYMENT_NOT_FOUND,"Payment not found."));
+    }
+    private AuthorizationHold holdForPayment(UUID walletId,Payment payment) {
+        return holds.findByWalletIdAndIdForUpdate(walletId,payment.getAuthorizationHoldId())
+                .orElseThrow(() -> stateConflict("Payment authorization hold is missing."));
+    }
+    private static void requireIdempotencyKey(String key) {
+        if(key==null||key.isBlank()||key.length()>128)
+            throw new WalletException(WalletErrorCode.INVALID_WALLET_REQUEST,"Idempotency-Key must contain 1 to 128 characters.");
+    }
+    private static WalletException stateConflict(String message) {
+        return new WalletException(WalletErrorCode.PAYMENT_STATE_CONFLICT,message);
     }
 
     @Transactional(readOnly = true)

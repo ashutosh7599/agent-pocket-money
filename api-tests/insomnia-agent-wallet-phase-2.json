@@ -511,6 +511,196 @@
       "settingFollowRedirects": "global",
       "modified": 1792262241582,
       "created": 1792262241582
+    },
+    {
+      "_id": "req_capture_payment",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "19 - Capture authorized payment",
+      "description": "Run as part of the collection in listed order.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/payments/{{ _.payment_id }}/capture",
+      "body": {},
+      "headers": [
+        {
+          "name": "Idempotency-Key",
+          "value": "{{ _.payment_idempotency_key }}-capture"
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "insomnia.test('returns CAPTURED', () => { insomnia.expect(insomnia.response.code).to.eql(200); insomnia.expect(insomnia.response.json().status).to.eql('CAPTURED'); });",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792262241583,
+      "created": 1792262241583
+    },
+    {
+      "_id": "req_after_capture",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "20 - Verify captured ledger balance",
+      "description": "Run as part of the collection in listed order.",
+      "method": "GET",
+      "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}",
+      "body": {},
+      "headers": [],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "const w=insomnia.response.json(); insomnia.test('capture moves the held amount from wallet balance', () => { insomnia.expect(w.balanceMinorUnits).to.eql(45000); insomnia.expect(w.heldBalanceMinorUnits).to.eql(0); insomnia.expect(w.availableBalanceMinorUnits).to.eql(45000); });",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792262241583,
+      "created": 1792262241583
+    },
+    {
+      "_id": "req_partial_refund",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "21 - Create partial refund",
+      "description": "Run as part of the collection in listed order.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/payments/{{ _.payment_id }}/refunds",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"amountMinorUnits\": 5000\n}"
+      },
+      "headers": [
+        {
+          "name": "Idempotency-Key",
+          "value": "{{ _.payment_idempotency_key }}-refund-1"
+        },
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "insomnia.test('creates a refund record', () => { insomnia.expect(insomnia.response.code).to.eql(200); insomnia.expect(insomnia.response.json().amountMinorUnits).to.eql(5000); });",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792262241583,
+      "created": 1792262241583
+    },
+    {
+      "_id": "req_check_partial_refund",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "22 - Verify partial refund status",
+      "description": "Run as part of the collection in listed order.",
+      "method": "GET",
+      "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/payments/{{ _.payment_id }}",
+      "body": {},
+      "headers": [],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "const p=insomnia.response.json(); insomnia.test('payment tracks partial refund', () => { insomnia.expect(p.status).to.eql('PARTIALLY_REFUNDED'); insomnia.expect(p.amountRefundedMinorUnits).to.eql(5000); });",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792262241583,
+      "created": 1792262241583
+    },
+    {
+      "_id": "req_final_refund",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "23 - Refund remaining amount",
+      "description": "Run as part of the collection in listed order.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/payments/{{ _.payment_id }}/refunds",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"amountMinorUnits\": 15000\n}"
+      },
+      "headers": [
+        {
+          "name": "Idempotency-Key",
+          "value": "{{ _.payment_idempotency_key }}-refund-2"
+        },
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "insomnia.test('creates the final refund', () => { insomnia.expect(insomnia.response.code).to.eql(200); });",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792262241583,
+      "created": 1792262241583
+    },
+    {
+      "_id": "req_check_refunded",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "24 - Verify fully refunded payment",
+      "description": "Run as part of the collection in listed order.",
+      "method": "GET",
+      "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/payments/{{ _.payment_id }}",
+      "body": {},
+      "headers": [],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "const p=insomnia.response.json(); insomnia.test('payment reaches REFUNDED', () => { insomnia.expect(p.status).to.eql('REFUNDED'); insomnia.expect(p.amountRefundedMinorUnits).to.eql(20000); });",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792262241583,
+      "created": 1792262241583
+    },
+    {
+      "_id": "req_after_refund",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "25 - Verify refund restores wallet balance",
+      "description": "Run as part of the collection in listed order.",
+      "method": "GET",
+      "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}",
+      "body": {},
+      "headers": [],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "const w=insomnia.response.json(); insomnia.test('refund restores the original wallet balance', () => { insomnia.expect(w.balanceMinorUnits).to.eql(65000); insomnia.expect(w.availableBalanceMinorUnits).to.eql(65000); });",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792262241583,
+      "created": 1792262241583
     }
   ]
 }

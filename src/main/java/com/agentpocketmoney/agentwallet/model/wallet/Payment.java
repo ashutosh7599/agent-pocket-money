@@ -32,6 +32,14 @@ public class Payment {
     private String declineReason;
     @Column(name = "authorization_hold_id")
     private UUID authorizationHoldId;
+    @Column(name = "merchant_ledger_account_id")
+    private UUID merchantLedgerAccountId;
+    @Column(name = "amount_refunded_minor_units", nullable = false)
+    private long amountRefundedMinorUnits;
+    @Column(name = "capture_idempotency_key", length = 128)
+    private String captureIdempotencyKey;
+    @Column(name = "void_idempotency_key", length = 128)
+    private String voidIdempotencyKey;
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
     @Column(name = "updated_at", nullable = false)
@@ -57,18 +65,36 @@ public class Payment {
         status=PaymentStatus.DECLINED; declineReason=reason; updatedAt=now.truncatedTo(ChronoUnit.MICROS);
         return true;
     }
-    public boolean capture(Instant now) {
+    public boolean capture(UUID merchantAccountId, String key, Instant now) {
         if (status != PaymentStatus.AUTHORIZED) return false;
-        status=PaymentStatus.CAPTURED; updatedAt=now.truncatedTo(ChronoUnit.MICROS); return true;
+        status=PaymentStatus.CAPTURED; merchantLedgerAccountId=merchantAccountId;
+        captureIdempotencyKey=key; updatedAt=now.truncatedTo(ChronoUnit.MICROS); return true;
     }
-    public boolean voidPayment(Instant now) {
+    public boolean voidPayment(String key, Instant now) {
         if (status != PaymentStatus.AUTHORIZED) return false;
-        status=PaymentStatus.VOIDED; updatedAt=now.truncatedTo(ChronoUnit.MICROS); return true;
+        status=PaymentStatus.VOIDED; voidIdempotencyKey=key;
+        updatedAt=now.truncatedTo(ChronoUnit.MICROS); return true;
+    }
+    public boolean expire(Instant now) {
+        if (status != PaymentStatus.AUTHORIZED) return false;
+        status=PaymentStatus.EXPIRED; updatedAt=now.truncatedTo(ChronoUnit.MICROS); return true;
+    }
+    public boolean refund(long amountMinorUnits, Instant now) {
+        if (status != PaymentStatus.CAPTURED && status != PaymentStatus.PARTIALLY_REFUNDED) return false;
+        long newTotal=Math.addExact(amountRefundedMinorUnits, amountMinorUnits);
+        if (newTotal > this.amountMinorUnits) return false;
+        amountRefundedMinorUnits=newTotal;
+        status=newTotal == this.amountMinorUnits ? PaymentStatus.REFUNDED : PaymentStatus.PARTIALLY_REFUNDED;
+        updatedAt=now.truncatedTo(ChronoUnit.MICROS); return true;
     }
     public UUID getId(){return id;} public Wallet getWallet(){return wallet;} public String getMerchantId(){return merchantId;}
     public long getAmountMinorUnits(){return amountMinorUnits;} public String getCurrency(){return currency;}
     public String getCategory(){return category;} public String getPurpose(){return purpose;}
     public String getIdempotencyKey(){return idempotencyKey;} public PaymentStatus getStatus(){return status;}
     public String getDeclineReason(){return declineReason;} public UUID getAuthorizationHoldId(){return authorizationHoldId;}
+    public UUID getMerchantLedgerAccountId(){return merchantLedgerAccountId;}
+    public long getAmountRefundedMinorUnits(){return amountRefundedMinorUnits;}
+    public String getCaptureIdempotencyKey(){return captureIdempotencyKey;}
+    public String getVoidIdempotencyKey(){return voidIdempotencyKey;}
     public Instant getCreatedAt(){return createdAt;} public Instant getUpdatedAt(){return updatedAt;}
 }

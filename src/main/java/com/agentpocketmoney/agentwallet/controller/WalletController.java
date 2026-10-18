@@ -19,6 +19,8 @@ import com.agentpocketmoney.agentwallet.dto.AuthorizationHoldResponse;
 import com.agentpocketmoney.agentwallet.dto.CreateAuthorizationHoldRequest;
 import com.agentpocketmoney.agentwallet.dto.CreatePaymentRequest;
 import com.agentpocketmoney.agentwallet.dto.PaymentResponse;
+import com.agentpocketmoney.agentwallet.dto.RefundRequest;
+import com.agentpocketmoney.agentwallet.dto.RefundResponse;
 import com.agentpocketmoney.agentwallet.dto.TopUpRequest;
 import com.agentpocketmoney.agentwallet.dto.TopUpResponse;
 import com.agentpocketmoney.agentwallet.dto.WalletResponse;
@@ -99,6 +101,25 @@ public class WalletController {
     @PostMapping("/{walletId}/payments/{paymentId}/authorize")
     public PaymentResponse authorizePayment(@PathVariable UUID walletId, @PathVariable UUID paymentId) {
         return PaymentResponse.from(payments.authorize(walletId, paymentId));
+    }
+
+    @PostMapping("/{walletId}/payments/{paymentId}/capture")
+    public PaymentResponse capturePayment(@PathVariable UUID walletId, @PathVariable UUID paymentId,
+            @RequestHeader("Idempotency-Key") String idempotencyKey) {
+        return PaymentResponse.from(payments.capture(walletId,paymentId,idempotencyKey));
+    }
+
+    @PostMapping("/{walletId}/payments/{paymentId}/void")
+    public PaymentResponse voidPayment(@PathVariable UUID walletId, @PathVariable UUID paymentId,
+            @RequestHeader("Idempotency-Key") String idempotencyKey) {
+        return PaymentResponse.from(payments.voidPayment(walletId,paymentId,idempotencyKey));
+    }
+
+    @PostMapping("/{walletId}/payments/{paymentId}/refunds")
+    public RefundResponse refundPayment(@PathVariable UUID walletId, @PathVariable UUID paymentId,
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @Valid @RequestBody RefundRequest request) {
+        return RefundResponse.from(payments.refund(walletId,paymentId,idempotencyKey,request.amountMinorUnits()));
     }
 
     @GetMapping("/{walletId}/payments/{paymentId}")

@@ -74,9 +74,15 @@ GET /api/v1/wallets/{walletId}/holds?status=ACTIVE&page=0&size=20 lists active, 
 - POST /api/v1/wallets/{walletId}/payments/{paymentId}/authorize authorizes the payment and reserves funds with an expiring hold. Repeated authorization requests return the same payment state without creating another hold. Insufficient available balance declines the payment.
 - GET /api/v1/wallets/{walletId}/payments/{paymentId} returns the wallet-scoped payment state.
 
+## Phase 5 capture, void, and refund
+
+- POST /api/v1/wallets/{walletId}/payments/{paymentId}/capture consumes an active authorization hold and posts a balanced debit to the wallet liability and credit to a merchant payable account. Retry with the same Idempotency-Key to receive the existing captured payment.
+- POST /api/v1/wallets/{walletId}/payments/{paymentId}/void releases an active hold without changing ledger balance. Retry with the same Idempotency-Key safely returns the voided payment.
+- POST /api/v1/wallets/{walletId}/payments/{paymentId}/refunds accepts a positive amountMinorUnits value and an Idempotency-Key. Partial refunds are supported; the total cannot exceed the captured amount. Each refund posts balanced merchant-payable debit and wallet-liability credit lines.
+
 ## Run the API smoke suite in Insomnia
 
-Import [`api-tests/insomnia-agent-wallet-phase-2.json`](api-tests/insomnia-agent-wallet-phase-2.json) into Insomnia, open the imported collection, choose **Run Collection**, keep all requests selected in order, and click **Run**. The suite creates a wallet, funds it, verifies ledger and available balances, creates, lists, and releases a hold, checks payment authorization and idempotency, insufficient available balance, and invalid requests. The collection saves generated wallet and idempotency values between requests.
+Import [`api-tests/insomnia-agent-wallet-phase-2.json`](api-tests/insomnia-agent-wallet-phase-2.json) into Insomnia, open the imported collection, choose **Run Collection**, keep all requests selected in order, and click **Run**. The suite creates a wallet, funds it, verifies ledger and available balances, creates, lists, and releases a hold, checks payment authorization, capture, partial/full refund, and idempotency, insufficient available balance, and invalid requests. The collection saves generated wallet and idempotency values between requests.
 
 The included environment targets `http://localhost:8080` and funds the wallet with 65000 minor units (₹650.00). Change `base_url` if the app uses a different port. Each run creates new sandbox data in PostgreSQL; no real money is moved. See [`api-tests/README.md`](api-tests/README.md) for setup details.
 

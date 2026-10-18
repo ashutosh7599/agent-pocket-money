@@ -21,6 +21,7 @@ public class AuthorizationHold {
     }
     public boolean release(Instant now) { return transition(AuthorizationHoldStatus.RELEASED, now); }
     public boolean expire(Instant now) { return transition(AuthorizationHoldStatus.EXPIRED, now); }
+    public boolean capture(Instant now) { return transition(AuthorizationHoldStatus.CAPTURED, now); }
     private boolean transition(AuthorizationHoldStatus target, Instant now) {
         if (status != AuthorizationHoldStatus.ACTIVE) return false;
         status=target; updatedAt=now.truncatedTo(ChronoUnit.MICROS); return true;
