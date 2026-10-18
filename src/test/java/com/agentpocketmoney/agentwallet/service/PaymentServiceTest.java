@@ -22,6 +22,7 @@ import com.agentpocketmoney.agentwallet.model.wallet.AuthorizationHoldStatus;
 import com.agentpocketmoney.agentwallet.model.wallet.Payment;
 import com.agentpocketmoney.agentwallet.model.wallet.PaymentRefund;
 import com.agentpocketmoney.agentwallet.model.wallet.PaymentStatus;
+import com.agentpocketmoney.agentwallet.model.wallet.PolicyDecision;
 import com.agentpocketmoney.agentwallet.model.wallet.Wallet;
 import com.agentpocketmoney.agentwallet.repository.AuthorizationHoldRepository;
 import com.agentpocketmoney.agentwallet.repository.PaymentRepository;
@@ -42,6 +43,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class PaymentServiceTest {
     @Mock WalletRepository wallets;
     @Mock PaymentRepository payments;
+    @Mock WalletPolicyService policy;
     @Mock AuthorizationHoldRepository holds;
     @Mock PaymentRefundRepository refunds;
     @Mock LedgerAccountRepository ledgerAccounts;
@@ -51,7 +53,7 @@ class PaymentServiceTest {
     private Wallet wallet;
 
     @BeforeEach void setUp() {
-        service=new PaymentService(wallets,payments,holds,refunds,ledgerAccounts,ledger,Clock.fixed(now, ZoneOffset.UTC),900);
+        service=new PaymentService(wallets,payments,holds,policy,refunds,ledgerAccounts,ledger,Clock.fixed(now, ZoneOffset.UTC),900);
         wallet=new Wallet(UUID.randomUUID(),new LedgerAccount("wallet-test","Wallet", AccountType.LIABILITY,"INR"),"INR");
     }
 
@@ -80,6 +82,7 @@ class PaymentServiceTest {
         Payment payment=new Payment(UUID.randomUUID(),wallet,"merchant-a",20000,"INR","FOOD","lunch","p-3",now);
         when(wallets.findByIdForUpdate(wallet.getId())).thenReturn(Optional.of(wallet));
         when(payments.findForUpdate(wallet.getId(),payment.getId())).thenReturn(Optional.of(payment));
+        allowPolicy(payment);
         when(holds.findExpiredForUpdate(wallet.getId(),AuthorizationHoldStatus.ACTIVE,now)).thenReturn(List.of());
         when(ledger.accountBalanceMinorUnits(wallet.getLedgerAccount().getId())).thenReturn(65000L);
         when(holds.sumActiveAmount(wallet.getId(),AuthorizationHoldStatus.ACTIVE,now)).thenReturn(10000L);
@@ -95,6 +98,7 @@ class PaymentServiceTest {
         Payment payment=new Payment(UUID.randomUUID(),wallet,"merchant-a",70000,"INR","FOOD","lunch","p-4",now);
         when(wallets.findByIdForUpdate(wallet.getId())).thenReturn(Optional.of(wallet));
         when(payments.findForUpdate(wallet.getId(),payment.getId())).thenReturn(Optional.of(payment));
+        allowPolicy(payment);
         when(holds.findExpiredForUpdate(wallet.getId(),AuthorizationHoldStatus.ACTIVE,now)).thenReturn(List.of());
         when(ledger.accountBalanceMinorUnits(wallet.getLedgerAccount().getId())).thenReturn(65000L);
         when(holds.sumActiveAmount(wallet.getId(),AuthorizationHoldStatus.ACTIVE,now)).thenReturn(0L);
@@ -147,6 +151,11 @@ class PaymentServiceTest {
                 .isInstanceOf(WalletException.class)
                 .extracting(e -> ((WalletException)e).getErrorCode()).isEqualTo(WalletErrorCode.REFUND_EXCEEDS_CAPTURED_AMOUNT);
         verify(ledger).post(anyString(),anyString(),anyList());
+    }
+
+    private void allowPolicy(Payment payment) {
+        when(policy.evaluate(eq(wallet),eq(payment),eq(now)))
+                .thenReturn(new WalletPolicyService.Decision(PolicyDecision.APPROVED,null));
     }
 
 }

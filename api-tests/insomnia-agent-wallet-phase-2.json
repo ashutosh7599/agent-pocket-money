@@ -397,10 +397,41 @@
       "created": 1792262241579
     },
     {
+      "_id": "req_configure_policy",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "15 - Configure merchant and spend policy",
+      "description": "Run before payment authorization requests.",
+      "method": "PUT",
+      "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/policy",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"allowedMerchantIds\": [\n    \"foodapp-demo\",\n    \"merchant-b\"\n  ],\n  \"maxTransactionAmountMinorUnits\": 50000,\n  \"dailyLimitMinorUnits\": 50000,\n  \"monthlyLimitMinorUnits\": 100000,\n  \"manualApprovalThresholdMinorUnits\": 60000,\n  \"velocityMaxTransactions\": 10,\n  \"velocityWindowSeconds\": 60,\n  \"categoryBudgets\": [\n    {\n      \"category\": \"FOOD\",\n      \"limitMinorUnits\": 50000\n    },\n    {\n      \"category\": \"OTHER\",\n      \"limitMinorUnits\": 50000\n    }\n  ]\n}"
+      },
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "insomnia.test('returns configured wallet policy', () => {\n  insomnia.expect(insomnia.response.code).to.eql(200);\n  insomnia.expect(insomnia.response.json().allowedMerchantIds).to.include('foodapp-demo');\n});",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792262241584,
+      "created": 1792262241584
+    },
+    {
       "_id": "req_create_payment",
       "_type": "request",
       "parentId": "wrk_agent_wallet_phase_2",
-      "name": "15 - Create a payment request",
+      "name": "16 - Create a payment request",
       "description": "Run as part of the collection in listed order.",
       "method": "POST",
       "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/payments",

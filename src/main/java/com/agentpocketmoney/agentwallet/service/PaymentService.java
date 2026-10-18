@@ -7,6 +7,7 @@ import com.agentpocketmoney.agentwallet.model.wallet.AuthorizationHold;
 import com.agentpocketmoney.agentwallet.model.wallet.AuthorizationHoldStatus;
 import com.agentpocketmoney.agentwallet.model.wallet.Payment;
 import com.agentpocketmoney.agentwallet.model.wallet.PaymentStatus;
+import com.agentpocketmoney.agentwallet.model.wallet.PolicyDecision;
 import com.agentpocketmoney.agentwallet.model.wallet.PaymentRefund;
 import com.agentpocketmoney.agentwallet.model.ledger.AccountType;
 import com.agentpocketmoney.agentwallet.model.ledger.LedgerAccount;
@@ -36,15 +37,16 @@ public class PaymentService {
     private final PaymentRepository payments;
     private final AuthorizationHoldRepository holds;
     private final LedgerService ledger;
+    private final WalletPolicyService policy;
     private final PaymentRefundRepository refunds;
     private final LedgerAccountRepository ledgerAccounts;
     private final Clock clock;
     private final long authorizationTtlSeconds;
 
-    public PaymentService(WalletRepository wallets, PaymentRepository payments, AuthorizationHoldRepository holds, PaymentRefundRepository refunds,
+    public PaymentService(WalletRepository wallets, PaymentRepository payments, AuthorizationHoldRepository holds, WalletPolicyService policy, PaymentRefundRepository refunds,
                           LedgerAccountRepository ledgerAccounts, LedgerService ledger, Clock clock,
                           @Value("${payments.authorization-ttl-seconds:900}") long authorizationTtlSeconds) {
-        this.wallets=wallets; this.payments=payments; this.holds=holds; this.refunds=refunds;
+        this.wallets=wallets; this.payments=payments; this.holds=holds; this.policy=policy; this.refunds=refunds;
         this.ledgerAccounts=ledgerAccounts; this.ledger=ledger;
         this.clock=clock; this.authorizationTtlSeconds=authorizationTtlSeconds;
     }
@@ -82,19 +84,24 @@ public class PaymentService {
         if (payment.getStatus() != PaymentStatus.CREATED) return payment;
         Instant now=clock.instant();
         expireDueWalletHolds(walletId, now);
+        WalletPolicyService.Decision decision=policy.evaluate(wallet,payment,now);
+        if (decision.result()==PolicyDecision.DECLINED) {
+            payment.decline(decision.reasonCode(),now);
+            logDecline(walletId,payment);
+            return payment;
+        }
         long balance=ledger.accountBalanceMinorUnits(wallet.getLedgerAccount().getId());
         long held=holds.sumActiveAmount(walletId, AuthorizationHoldStatus.ACTIVE, now);
         if (payment.getAmountMinorUnits() > balance-held) {
             payment.decline("INSUFFICIENT_AVAILABLE_BALANCE", now);
-            AfterCommitAction.run(() -> logger.atInfo().addKeyValue("payment.id", paymentId)
-                    .addKeyValue("wallet.id", walletId).addKeyValue("reason", payment.getDeclineReason())
-                    .log("Payment authorization declined"));
+            logDecline(walletId,payment);
             return payment;
         }
         Instant expiresAt=now.plusSeconds(authorizationTtlSeconds);
         AuthorizationHold hold=holds.save(new AuthorizationHold(UUID.randomUUID(), wallet,
                 payment.getAmountMinorUnits(), expiresAt, now));
-        payment.authorize(hold.getId(), now);
+        if (decision.result()==PolicyDecision.PENDING_APPROVAL) payment.requestApproval(hold.getId(),now);
+        else payment.authorize(hold.getId(), now);
         AfterCommitAction.run(() -> logger.atInfo().addKeyValue("payment.id", paymentId)
                 .addKeyValue("wallet.id", walletId).addKeyValue("authorization_hold.id", hold.getId())
                 .addKeyValue("amount.minor_units", payment.getAmountMinorUnits())
@@ -215,6 +222,11 @@ public class PaymentService {
                 .orElseThrow(() -> new WalletException(WalletErrorCode.PAYMENT_NOT_FOUND, "Payment not found."));
     }
 
+    private void logDecline(UUID walletId,Payment payment) {
+        AfterCommitAction.run(() -> logger.atInfo().addKeyValue("payment.id",payment.getId())
+                .addKeyValue("wallet.id",walletId).addKeyValue("reason",payment.getDeclineReason())
+                .log("Payment authorization declined"));
+    }
     private void expireDueWalletHolds(UUID walletId, Instant now) {
         List<AuthorizationHold> due=holds.findExpiredForUpdate(walletId, AuthorizationHoldStatus.ACTIVE, now);
         due.forEach(hold -> hold.expire(now));

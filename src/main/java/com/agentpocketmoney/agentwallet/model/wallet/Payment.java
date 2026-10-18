@@ -60,6 +60,11 @@ public class Payment {
         status=PaymentStatus.AUTHORIZED; authorizationHoldId=holdId; updatedAt=now.truncatedTo(ChronoUnit.MICROS);
         return true;
     }
+    public boolean requestApproval(UUID holdId, Instant now) {
+        if (status != PaymentStatus.CREATED) return false;
+        status=PaymentStatus.PENDING_APPROVAL; authorizationHoldId=holdId; updatedAt=now.truncatedTo(ChronoUnit.MICROS);
+        return true;
+    }
     public boolean decline(String reason, Instant now) {
         if (status != PaymentStatus.CREATED) return false;
         status=PaymentStatus.DECLINED; declineReason=reason; updatedAt=now.truncatedTo(ChronoUnit.MICROS);

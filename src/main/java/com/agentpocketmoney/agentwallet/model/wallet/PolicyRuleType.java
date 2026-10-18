@@ -1,0 +1,5 @@
+package com.agentpocketmoney.agentwallet.model.wallet;
+public enum PolicyRuleType {
+    MAX_TRANSACTION_AMOUNT, DAILY_SPEND_LIMIT, MONTHLY_SPEND_LIMIT, CATEGORY_BUDGET,
+    VELOCITY_LIMIT, MANUAL_APPROVAL_THRESHOLD, MERCHANT_ALLOWLIST
+}

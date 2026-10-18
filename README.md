@@ -74,6 +74,12 @@ GET /api/v1/wallets/{walletId}/holds?status=ACTIVE&page=0&size=20 lists active, 
 - POST /api/v1/wallets/{walletId}/payments/{paymentId}/authorize authorizes the payment and reserves funds with an expiring hold. Repeated authorization requests return the same payment state without creating another hold. Insufficient available balance declines the payment.
 - GET /api/v1/wallets/{walletId}/payments/{paymentId} returns the wallet-scoped payment state.
 
+## Phase 6 policy engine
+
+- PUT /api/v1/wallets/{walletId}/policy replaces the wallet's allowed merchant IDs, per-transaction/daily/monthly limits, category budgets, velocity window, and manual approval threshold.
+- Authorization is deny-by-default: merchants must appear in the allowlist. Policy checks return reason codes for merchant, transaction, daily/monthly, category, or velocity declines. Transactions at or above the approval threshold become PENDING_APPROVAL and reserve funds.
+- Every evaluation is persisted with its result and reason. Configure the policy before authorizing payments.
+
 ## Phase 5 capture, void, and refund
 
 - POST /api/v1/wallets/{walletId}/payments/{paymentId}/capture consumes an active authorization hold and posts a balanced debit to the wallet liability and credit to a merchant payable account. Retry with the same Idempotency-Key to receive the existing captured payment.
@@ -82,7 +88,7 @@ GET /api/v1/wallets/{walletId}/holds?status=ACTIVE&page=0&size=20 lists active, 
 
 ## Run the API smoke suite in Insomnia
 
-Import [`api-tests/insomnia-agent-wallet-phase-2.json`](api-tests/insomnia-agent-wallet-phase-2.json) into Insomnia, open the imported collection, choose **Run Collection**, keep all requests selected in order, and click **Run**. The suite creates a wallet, funds it, verifies ledger and available balances, creates, lists, and releases a hold, checks payment authorization, capture, partial/full refund, and idempotency, insufficient available balance, and invalid requests. The collection saves generated wallet and idempotency values between requests.
+Import [`api-tests/insomnia-agent-wallet-phase-2.json`](api-tests/insomnia-agent-wallet-phase-2.json) into Insomnia, open the imported collection, choose **Run Collection**, keep all requests selected in order, and click **Run**. The suite creates a wallet, funds it, verifies ledger and available balances, creates, lists, and releases a hold, checks policy configuration, payment authorization, capture, partial/full refund, and idempotency, insufficient available balance, and invalid requests. The collection saves generated wallet and idempotency values between requests.
 
 The included environment targets `http://localhost:8080` and funds the wallet with 65000 minor units (₹650.00). Change `base_url` if the app uses a different port. Each run creates new sandbox data in PostgreSQL; no real money is moved. See [`api-tests/README.md`](api-tests/README.md) for setup details.
 
