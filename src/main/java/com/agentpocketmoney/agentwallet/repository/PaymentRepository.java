@@ -22,6 +22,7 @@ public interface PaymentRepository extends JpaRepository<Payment, UUID> {
     long countSpendSince(@Param("walletId") UUID walletId,@Param("from") java.time.Instant from,@Param("statuses") List<PaymentStatus> statuses);
 
     Optional<Payment> findByWalletIdAndIdempotencyKey(UUID walletId, String idempotencyKey);
+    List<Payment> findByStatusIn(List<PaymentStatus> statuses);
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select p from Payment p where p.wallet.id = :walletId and p.id = :paymentId")
     Optional<Payment> findForUpdate(@Param("walletId") UUID walletId, @Param("paymentId") UUID paymentId);

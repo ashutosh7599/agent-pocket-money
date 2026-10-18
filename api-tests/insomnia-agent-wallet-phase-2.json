@@ -906,6 +906,85 @@
       "settingFollowRedirects": "global",
       "modified": 1792262241585,
       "created": 1792262241585
+    },
+    {
+      "_id": "req_recon_mock_match",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "31 - Reconcile a matching mock settlement report",
+      "description": "Run as part of the collection in listed order.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/v1/reconciliation/mock-batches?scenario=MATCH",
+      "body": {
+        "mimeType": "application/json",
+        "text": ""
+      },
+      "headers": [],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "insomnia.test('creates a matched reconciliation batch', () => {\n  insomnia.expect(insomnia.response.code).to.eql(201);\n  insomnia.expect(insomnia.response.json().status).to.eql('MATCHED');\n  insomnia.expect(insomnia.response.json().breakCount).to.eql(0);\n});",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792320000000,
+      "created": 1792320000000
+    },
+    {
+      "_id": "req_recon_mock_break",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "32 - Generate a mock report with a missing payment",
+      "description": "Run as part of the collection in listed order.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/v1/reconciliation/mock-batches?scenario=UNKNOWN_PAYMENT",
+      "body": {
+        "mimeType": "application/json",
+        "text": ""
+      },
+      "headers": [],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "insomnia.test('stores a reconciliation break', () => {\n  insomnia.expect(insomnia.response.code).to.eql(201);\n  insomnia.expect(insomnia.response.json().status).to.eql('BREAKS_FOUND');\n  insomnia.expect(insomnia.response.json().breakCount).to.be.above(0);\n});\ninsomnia.environment.set('reconciliation_batch_id', insomnia.response.json().id);",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792320000000,
+      "created": 1792320000000
+    },
+    {
+      "_id": "req_recon_breaks",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "33 - Query stored reconciliation breaks",
+      "description": "Run as part of the collection in listed order.",
+      "method": "GET",
+      "url": "{{ _.base_url }}/api/v1/reconciliation/batches/{{ _.reconciliation_batch_id }}/breaks",
+      "body": {
+        "mimeType": "application/json",
+        "text": ""
+      },
+      "headers": [],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "insomnia.test('returns stored reconciliation breaks', () => {\n  insomnia.expect(insomnia.response.code).to.eql(200);\n  insomnia.expect(insomnia.response.json().breaks.length).to.be.above(0);\n});",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792320000000,
+      "created": 1792320000000
     }
-  ]
+  ],
+  "_export_date": "2026-10-18T13:11:59.820539Z"
 }

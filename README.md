@@ -98,6 +98,12 @@ Payment creation accepts an optional gatewayScenario: APPROVE (default), DECLINE
 
 For local signature generation, set the same secret in your shell and use Python's `hmac` module to sign the exact request body bytes. Whitespace changes alter the signature.
 
+## Phase 9 reconciliation
+
+- `POST /api/v1/reconciliation/batches` reconciles a JSON array of settlement rows (`paymentId`, `amountMinorUnits`, `status`) against captured/refunded payments and persists the batch and any breaks.
+- `POST /api/v1/reconciliation/mock-batches?scenario=MATCH` generates a matching report. Use `MISSING`, `AMOUNT_MISMATCH`, `STATUS_MISMATCH`, or `UNKNOWN_PAYMENT` to exercise break detection.
+- `GET /api/v1/reconciliation/batches/{batchId}` reads a persisted batch; `GET /api/v1/reconciliation/batches/{batchId}/breaks` returns its stored breaks.
+
 ## Run the API smoke suite in Insomnia
 
 Import [`api-tests/insomnia-agent-wallet-phase-2.json`](api-tests/insomnia-agent-wallet-phase-2.json) into Insomnia, open the imported collection, choose **Run Collection**, keep all requests selected in order, and click **Run**. The suite creates a wallet, funds it, verifies ledger and available balances, creates, lists, and releases a hold, checks policy setup, payment authorization, capture, partial/full refund, gateway outcomes, and idempotency, insufficient available balance, and invalid requests. The collection saves generated wallet and idempotency values between requests.
