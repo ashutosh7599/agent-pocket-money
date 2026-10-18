@@ -1,6 +1,6 @@
 # Agent Wallet
 
-Sandbox backend project for learning safe agent spending and payment systems. Phases 1 and 2 provide an append-only double-entry ledger and ledger-backed wallet funding.
+Sandbox backend project for learning safe agent spending and payment systems. Phases 1–3 provide an append-only double-entry ledger, ledger-backed wallet funding, and authorization holds with available balance tracking.
 
 ## Requirements
 
@@ -53,15 +53,24 @@ The ledger core is exposed through the application service and the wallet routes
 ## Phase 2 wallet API
 
 - `POST /api/v1/wallets` creates an active INR wallet.
-- `GET /api/v1/wallets/{walletId}` returns status and balance calculated from the ledger.
+- `GET /api/v1/wallets/{walletId}` returns ledger balance, active held amount, and available balance.
 - `POST /api/v1/wallets/{walletId}/top-ups` funds the wallet from the simulated settlement account. Send an `Idempotency-Key` header and a JSON body such as `{"amountMinorUnits":65000}`.
 - `GET /api/v1/wallets/{walletId}/transactions?page=0&size=20` returns ledger-backed wallet history; page size is limited to 100.
 
 Top-up retries with the same wallet, key, and amount return the original result. Reusing a key with a different amount returns `409 Conflict`. Top-ups are recorded as debit-to-settlement and credit-to-wallet journal lines in the same database transaction. Wallet balance is not cached.
 
+## Phase 3 authorization holds
+
+GET /api/v1/wallets/{walletId}/holds?status=ACTIVE&page=0&size=20 lists active, unexpired holds by default. Set status to RELEASED or EXPIRED to inspect history, then use a listed hold ID in the release request.
+
+- `POST /api/v1/wallets/{walletId}/holds` reserves available funds. Send `{"amountMinorUnits":20000,"expiresAt":"<future ISO-8601 timestamp>"}`. The response is `201 Created` with an `ACTIVE` hold.
+- `POST /api/v1/wallets/{walletId}/holds/{holdId}/release` releases an active hold. Releasing an already released or expired hold is safe and returns its current state.
+- `GET /api/v1/wallets/{walletId}` keeps `balanceMinorUnits` as the ledger balance and includes `heldBalanceMinorUnits` and `availableBalanceMinorUnits`. Only active, unexpired holds count against available funds.
+- A scheduled worker expires due holds every 30 seconds by default. Wallet reads and hold operations also expire due holds for that wallet. Configure `wallet.holds.expiry-poll-interval-ms` to change the poll interval.
+
 ## Run the API smoke suite in Insomnia
 
-Import [`api-tests/insomnia-agent-wallet-phase-2.json`](api-tests/insomnia-agent-wallet-phase-2.json) into Insomnia, open the imported collection, choose **Run Collection**, keep all requests selected in order, and click **Run**. The suite creates a wallet, funds it, verifies its balance and transaction history, checks top-up idempotency, and confirms invalid requests return safe errors. The collection saves generated wallet and idempotency values between requests.
+Import [`api-tests/insomnia-agent-wallet-phase-2.json`](api-tests/insomnia-agent-wallet-phase-2.json) into Insomnia, open the imported collection, choose **Run Collection**, keep all requests selected in order, and click **Run**. The suite creates a wallet, funds it, verifies ledger and available balances, creates and releases a hold, checks insufficient available balance and top-up idempotency, and confirms invalid requests return safe errors. The collection saves generated wallet and idempotency values between requests.
 
 The included environment targets `http://localhost:8080` and funds the wallet with 65000 minor units (₹650.00). Change `base_url` if the app uses a different port. Each run creates new sandbox data in PostgreSQL; no real money is moved. See [`api-tests/README.md`](api-tests/README.md) for setup details.
 

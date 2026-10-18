@@ -11,7 +11,13 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.Optional;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -21,11 +27,14 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.agentpocketmoney.agentwallet.model.ledger.AccountType;
 import com.agentpocketmoney.agentwallet.model.ledger.JournalEntry;
 import com.agentpocketmoney.agentwallet.model.ledger.LedgerAccount;
+import com.agentpocketmoney.agentwallet.model.wallet.AuthorizationHold;
+import com.agentpocketmoney.agentwallet.model.wallet.AuthorizationHoldStatus;
 import com.agentpocketmoney.agentwallet.model.wallet.TopUp;
 import com.agentpocketmoney.agentwallet.model.wallet.TopUpResult;
 import com.agentpocketmoney.agentwallet.model.wallet.Wallet;
 import com.agentpocketmoney.agentwallet.exception.WalletErrorCode;
 import com.agentpocketmoney.agentwallet.exception.WalletException;
+import com.agentpocketmoney.agentwallet.repository.AuthorizationHoldRepository;
 import com.agentpocketmoney.agentwallet.repository.LedgerAccountRepository;
 import com.agentpocketmoney.agentwallet.repository.TopUpRepository;
 import com.agentpocketmoney.agentwallet.repository.WalletRepository;
@@ -38,6 +47,9 @@ class WalletServiceTest {
     @Mock WalletTransactionRepository transactions;
     @Mock LedgerAccountRepository ledgerAccounts;
     @Mock LedgerService ledger;
+    @Mock AuthorizationHoldRepository holds;
+
+    private final Instant now = Instant.parse("2026-10-18T12:00:00Z");
 
     private WalletService service;
     private Wallet wallet;
@@ -46,7 +58,8 @@ class WalletServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new WalletService(wallets, topUps, transactions, ledgerAccounts, ledger);
+        service = new WalletService(wallets, topUps, transactions, ledgerAccounts, ledger, holds,
+                Clock.fixed(now, ZoneOffset.UTC));
         walletAccount = new LedgerAccount("wallet-test", "Test wallet", AccountType.LIABILITY, "INR");
         settlementAccount = new LedgerAccount("sandbox-settlement-inr", "Settlement", AccountType.ASSET, "INR");
         wallet = new Wallet(UUID.randomUUID(), walletAccount, "INR");
@@ -113,4 +126,107 @@ class WalletServiceTest {
                 .hasMessageContaining("positive");
         verify(wallets, never()).findByIdForUpdate(any());
     }
+
+    @Test
+    void activeHoldsReduceAvailableBalance() {
+        when(wallets.findByIdForUpdate(wallet.getId())).thenReturn(Optional.of(wallet));
+        when(holds.findExpiredForUpdate(eq(wallet.getId()), eq(AuthorizationHoldStatus.ACTIVE), any()))
+                .thenReturn(List.of());
+        when(ledger.accountBalanceMinorUnits(walletAccount.getId())).thenReturn(65000L);
+        when(holds.sumActiveAmount(eq(wallet.getId()), eq(AuthorizationHoldStatus.ACTIVE), any())).thenReturn(25000L);
+
+        WalletService.WalletResponseView view = service.getWallet(wallet.getId());
+
+        assertThat(view.balanceMinorUnits()).isEqualTo(65000);
+        assertThat(view.heldBalanceMinorUnits()).isEqualTo(25000);
+        assertThat(view.availableBalanceMinorUnits()).isEqualTo(40000);
+    }
+
+    @Test
+    void createsHoldWhenAvailableBalanceIsSufficient() {
+        when(wallets.findByIdForUpdate(wallet.getId())).thenReturn(Optional.of(wallet));
+        when(holds.findExpiredForUpdate(eq(wallet.getId()), eq(AuthorizationHoldStatus.ACTIVE), any()))
+                .thenReturn(List.of());
+        when(ledger.accountBalanceMinorUnits(walletAccount.getId())).thenReturn(65000L);
+        when(holds.sumActiveAmount(eq(wallet.getId()), eq(AuthorizationHoldStatus.ACTIVE), any())).thenReturn(25000L);
+        when(holds.save(any(AuthorizationHold.class))).thenAnswer(call -> call.getArgument(0));
+
+        AuthorizationHold hold = service.createHold(wallet.getId(), 20000, now.plusSeconds(600));
+
+        assertThat(hold.getStatus()).isEqualTo(AuthorizationHoldStatus.ACTIVE);
+        assertThat(hold.getAmountMinorUnits()).isEqualTo(20000);
+        verify(holds).save(any(AuthorizationHold.class));
+    }
+
+    @Test
+    void rejectsHoldThatExceedsAvailableBalance() {
+        when(wallets.findByIdForUpdate(wallet.getId())).thenReturn(Optional.of(wallet));
+        when(holds.findExpiredForUpdate(eq(wallet.getId()), eq(AuthorizationHoldStatus.ACTIVE), any()))
+                .thenReturn(List.of());
+        when(ledger.accountBalanceMinorUnits(walletAccount.getId())).thenReturn(65000L);
+        when(holds.sumActiveAmount(eq(wallet.getId()), eq(AuthorizationHoldStatus.ACTIVE), any())).thenReturn(25000L);
+
+        assertThatThrownBy(() -> service.createHold(wallet.getId(), 40001, now.plusSeconds(600)))
+                .isInstanceOf(WalletException.class)
+                .extracting(exception -> ((WalletException) exception).getErrorCode())
+                .isEqualTo(WalletErrorCode.INSUFFICIENT_AVAILABLE_BALANCE);
+        verify(holds, never()).save(any(AuthorizationHold.class));
+    }
+
+    @Test
+    void releaseRestoresAvailableBalanceAndIsIdempotent() {
+        AuthorizationHold hold = new AuthorizationHold(UUID.randomUUID(), wallet, 10000, now.plusSeconds(600), now);
+        when(wallets.findByIdForUpdate(wallet.getId())).thenReturn(Optional.of(wallet));
+        when(holds.findExpiredForUpdate(eq(wallet.getId()), eq(AuthorizationHoldStatus.ACTIVE), any()))
+                .thenReturn(List.of());
+        when(holds.findByWalletIdAndIdForUpdate(wallet.getId(), hold.getId())).thenReturn(Optional.of(hold));
+
+        assertThat(service.releaseHold(wallet.getId(), hold.getId()).getStatus())
+                .isEqualTo(AuthorizationHoldStatus.RELEASED);
+        assertThat(service.releaseHold(wallet.getId(), hold.getId()).getStatus())
+                .isEqualTo(AuthorizationHoldStatus.RELEASED);
+    }
+
+    @Test
+    void expiryMarksDueHoldsAndRestoresAvailableFunds() {
+        AuthorizationHold hold = new AuthorizationHold(UUID.randomUUID(), wallet, 10000, now, now.minusSeconds(60));
+        when(holds.findWalletIdsWithExpiredHolds(AuthorizationHoldStatus.ACTIVE, now)).thenReturn(List.of(wallet.getId()), List.of());
+        when(wallets.findByIdForUpdate(wallet.getId())).thenReturn(Optional.of(wallet));
+        when(holds.findExpiredForUpdate(wallet.getId(), AuthorizationHoldStatus.ACTIVE, now)).thenReturn(List.of(hold));
+
+        assertThat(service.expireDueHolds()).isEqualTo(1);
+        assertThat(hold.getStatus()).isEqualTo(AuthorizationHoldStatus.EXPIRED);
+        assertThat(service.expireDueHolds()).isZero();
+    }
+    @Test
+    void expiredHoldIsRemovedFromAvailableBalance() {
+        AuthorizationHold expired = new AuthorizationHold(UUID.randomUUID(), wallet, 10000, now, now.minusSeconds(60));
+        when(wallets.findByIdForUpdate(wallet.getId())).thenReturn(Optional.of(wallet));
+        when(holds.findExpiredForUpdate(wallet.getId(), AuthorizationHoldStatus.ACTIVE, now))
+                .thenReturn(List.of(expired));
+        when(ledger.accountBalanceMinorUnits(walletAccount.getId())).thenReturn(65000L);
+        when(holds.sumActiveAmount(wallet.getId(), AuthorizationHoldStatus.ACTIVE, now)).thenReturn(0L);
+
+        WalletService.WalletResponseView view = service.getWallet(wallet.getId());
+
+        assertThat(expired.getStatus()).isEqualTo(AuthorizationHoldStatus.EXPIRED);
+        assertThat(view.heldBalanceMinorUnits()).isZero();
+        assertThat(view.availableBalanceMinorUnits()).isEqualTo(65000);
+    }
+
+    @Test
+    void listsWalletHoldsForRelease() {
+        AuthorizationHold hold = new AuthorizationHold(UUID.randomUUID(), wallet, 12000, now.plusSeconds(600), now);
+        when(wallets.findByIdForUpdate(wallet.getId())).thenReturn(Optional.of(wallet));
+        when(holds.findExpiredForUpdate(wallet.getId(), AuthorizationHoldStatus.ACTIVE, now)).thenReturn(List.of());
+        when(holds.findWalletHolds(wallet.getId(), AuthorizationHoldStatus.ACTIVE,
+                AuthorizationHoldStatus.ACTIVE, now, PageRequest.of(0, 20)))
+                .thenReturn(new PageImpl<>(List.of(hold)));
+
+        var result = service.listHolds(wallet.getId(), AuthorizationHoldStatus.ACTIVE, PageRequest.of(0, 20));
+
+        assertThat(result.getContent()).containsExactly(hold);
+        assertThat(result.getTotalElements()).isEqualTo(1);
+    }
+
 }

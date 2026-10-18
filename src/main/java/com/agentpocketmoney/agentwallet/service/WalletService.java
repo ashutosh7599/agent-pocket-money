@@ -2,9 +2,12 @@ package com.agentpocketmoney.agentwallet.service;
 
 import java.util.List;
 import java.util.UUID;
+import java.time.Clock;
+import java.time.Instant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,11 +20,14 @@ import com.agentpocketmoney.agentwallet.model.ledger.PostingSide;
 import com.agentpocketmoney.agentwallet.config.AfterCommitAction;
 import com.agentpocketmoney.agentwallet.exception.WalletErrorCode;
 import com.agentpocketmoney.agentwallet.exception.WalletException;
+import com.agentpocketmoney.agentwallet.model.wallet.AuthorizationHold;
+import com.agentpocketmoney.agentwallet.model.wallet.AuthorizationHoldStatus;
 import com.agentpocketmoney.agentwallet.model.wallet.TopUp;
 import com.agentpocketmoney.agentwallet.model.wallet.TopUpResult;
 import com.agentpocketmoney.agentwallet.model.wallet.Wallet;
 import com.agentpocketmoney.agentwallet.model.wallet.WalletStatus;
 import com.agentpocketmoney.agentwallet.model.wallet.WalletTransactionRecord;
+import com.agentpocketmoney.agentwallet.repository.AuthorizationHoldRepository;
 import com.agentpocketmoney.agentwallet.repository.LedgerAccountRepository;
 import com.agentpocketmoney.agentwallet.repository.TopUpRepository;
 import com.agentpocketmoney.agentwallet.repository.WalletRepository;
@@ -38,16 +44,20 @@ public class WalletService {
     private final WalletTransactionRepository transactions;
     private final LedgerAccountRepository ledgerAccounts;
     private final LedgerService ledger;
+    private final AuthorizationHoldRepository holds;
+    private final Clock clock;
 
     public WalletService(WalletRepository wallets, TopUpRepository topUps,
                          WalletTransactionRepository transactions,
                          LedgerAccountRepository ledgerAccounts,
-                         LedgerService ledger) {
+                         LedgerService ledger, AuthorizationHoldRepository holds, Clock clock) {
         this.wallets = wallets;
         this.topUps = topUps;
         this.transactions = transactions;
         this.ledgerAccounts = ledgerAccounts;
         this.ledger = ledger;
+        this.holds = holds;
+        this.clock = clock;
     }
 
     @Transactional
@@ -61,14 +71,93 @@ public class WalletService {
                 .addKeyValue("wallet.id", walletId)
                 .addKeyValue("currency", DEFAULT_CURRENCY)
                 .log("Wallet created"));
-        return walletView(wallet, 0);
+        return walletView(wallet, 0, 0);
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public WalletResponseView getWallet(UUID walletId) {
-        Wallet wallet = findWallet(walletId);
+        Wallet wallet = lockWallet(walletId);
+        Instant now = clock.instant();
+        expireWalletHolds(walletId, now);
         long balance = ledger.accountBalanceMinorUnits(wallet.getLedgerAccount().getId());
-        return walletView(wallet, balance);
+        long held = holds.sumActiveAmount(walletId, AuthorizationHoldStatus.ACTIVE, now);
+        return walletView(wallet, balance, held);
+    }
+
+    @Transactional
+    public AuthorizationHold createHold(UUID walletId, long amountMinorUnits, Instant expiresAt) {
+        Instant now = clock.instant();
+        if (amountMinorUnits <= 0 || expiresAt == null || !expiresAt.isAfter(now)) {
+            throw walletError(WalletErrorCode.INVALID_WALLET_REQUEST,
+                    "Hold amount must be positive and expiry must be in the future.");
+        }
+        Wallet wallet = lockWallet(walletId);
+        ensureActive(wallet);
+        expireWalletHolds(walletId, now);
+        long balance = ledger.accountBalanceMinorUnits(wallet.getLedgerAccount().getId());
+        long held = holds.sumActiveAmount(walletId, AuthorizationHoldStatus.ACTIVE, now);
+        if (amountMinorUnits > balance - held) {
+            throw walletError(WalletErrorCode.INSUFFICIENT_AVAILABLE_BALANCE,
+                    "Wallet does not have enough available balance.");
+        }
+        AuthorizationHold hold = holds.save(new AuthorizationHold(UUID.randomUUID(), wallet,
+                amountMinorUnits, expiresAt, now));
+        AfterCommitAction.run(() -> logger.atInfo()
+                .addKeyValue("wallet.id", walletId)
+                .addKeyValue("authorization_hold.id", hold.getId())
+                .addKeyValue("amount.minor_units", amountMinorUnits)
+                .addKeyValue("expires_at", expiresAt)
+                .log("Authorization hold created"));
+        return hold;
+    }
+
+    @Transactional
+    public Page<AuthorizationHold> listHolds(UUID walletId, AuthorizationHoldStatus status, Pageable pageable) {
+        lockWallet(walletId);
+        Instant now = clock.instant();
+        expireWalletHolds(walletId, now);
+        return holds.findWalletHolds(walletId, status, AuthorizationHoldStatus.ACTIVE, now, pageable);
+    }
+
+    @Transactional
+    public AuthorizationHold releaseHold(UUID walletId, UUID holdId) {
+        lockWallet(walletId);
+        Instant now = clock.instant();
+        expireWalletHolds(walletId, now);
+        AuthorizationHold hold = holds.findByWalletIdAndIdForUpdate(walletId, holdId)
+                .orElseThrow(() -> walletError(WalletErrorCode.HOLD_NOT_FOUND, "Authorization hold not found."));
+        if (hold.release(now)) {
+            AfterCommitAction.run(() -> logger.atInfo()
+                    .addKeyValue("wallet.id", walletId)
+                    .addKeyValue("authorization_hold.id", holdId)
+                    .log("Authorization hold released"));
+        }
+        return hold;
+    }
+
+    @Transactional
+    public int expireDueHolds() {
+        Instant now = clock.instant();
+        int expired = 0;
+        for (UUID walletId : holds.findWalletIdsWithExpiredHolds(AuthorizationHoldStatus.ACTIVE, now)) {
+            lockWallet(walletId);
+            expired += expireWalletHolds(walletId, now);
+        }
+        return expired;
+    }
+
+    private int expireWalletHolds(UUID walletId, Instant now) {
+        List<AuthorizationHold> due = holds.findExpiredForUpdate(walletId, AuthorizationHoldStatus.ACTIVE, now);
+        int expired = 0;
+        for (AuthorizationHold hold : due) if (hold.expire(now)) expired++;
+        if (expired > 0) {
+            int count = expired;
+            AfterCommitAction.run(() -> logger.atInfo()
+                    .addKeyValue("wallet.id", walletId)
+                    .addKeyValue("authorization_holds.expired_count", count)
+                    .log("Expired authorization holds"));
+        }
+        return expired;
     }
 
     @Transactional
@@ -113,6 +202,11 @@ public class WalletService {
         return transactions.findWalletTransactions(wallet.getLedgerAccount().getId(), pageable);
     }
 
+    private Wallet lockWallet(UUID walletId) {
+        return wallets.findByIdForUpdate(walletId)
+                .orElseThrow(() -> walletError(WalletErrorCode.WALLET_NOT_FOUND, "Wallet not found."));
+    }
+
     private Wallet findWallet(UUID walletId) {
         return wallets.findById(walletId)
                 .orElseThrow(() -> walletError(WalletErrorCode.WALLET_NOT_FOUND, "Wallet not found."));
@@ -138,9 +232,10 @@ public class WalletService {
         }
     }
 
-    private static WalletResponseView walletView(Wallet wallet, long balanceMinorUnits) {
+    private static WalletResponseView walletView(Wallet wallet, long balanceMinorUnits, long heldBalanceMinorUnits) {
         return new WalletResponseView(wallet.getId(), wallet.getStatus(), wallet.getCurrency(),
-                balanceMinorUnits, wallet.getCreatedAt());
+                balanceMinorUnits, heldBalanceMinorUnits,
+                balanceMinorUnits - heldBalanceMinorUnits, wallet.getCreatedAt());
     }
 
     private static WalletException walletError(WalletErrorCode code, String message) {
@@ -148,5 +243,6 @@ public class WalletService {
     }
 
     public record WalletResponseView(UUID id, WalletStatus status, String currency,
-                                     long balanceMinorUnits, java.time.Instant createdAt) {}
+                                     long balanceMinorUnits, long heldBalanceMinorUnits,
+                                     long availableBalanceMinorUnits, java.time.Instant createdAt) {}
 }
