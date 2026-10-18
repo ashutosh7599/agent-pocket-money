@@ -22,7 +22,10 @@ import com.agentpocketmoney.agentwallet.model.wallet.AuthorizationHoldStatus;
 import com.agentpocketmoney.agentwallet.model.wallet.Payment;
 import com.agentpocketmoney.agentwallet.model.wallet.PaymentRefund;
 import com.agentpocketmoney.agentwallet.model.wallet.PaymentStatus;
+import com.agentpocketmoney.agentwallet.model.wallet.GatewayScenario;
 import com.agentpocketmoney.agentwallet.model.wallet.PolicyDecision;
+import com.agentpocketmoney.agentwallet.mock.GatewayResult;
+import com.agentpocketmoney.agentwallet.mock.MockPaymentGateway;
 import com.agentpocketmoney.agentwallet.model.wallet.Wallet;
 import com.agentpocketmoney.agentwallet.repository.AuthorizationHoldRepository;
 import com.agentpocketmoney.agentwallet.repository.PaymentRepository;
@@ -43,6 +46,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class PaymentServiceTest {
     @Mock WalletRepository wallets;
     @Mock PaymentRepository payments;
+    @Mock MockPaymentGateway gateway;
     @Mock WalletPolicyService policy;
     @Mock AuthorizationHoldRepository holds;
     @Mock PaymentRefundRepository refunds;
@@ -53,7 +57,7 @@ class PaymentServiceTest {
     private Wallet wallet;
 
     @BeforeEach void setUp() {
-        service=new PaymentService(wallets,payments,holds,policy,refunds,ledgerAccounts,ledger,Clock.fixed(now, ZoneOffset.UTC),900);
+        service=new PaymentService(wallets,payments,holds,gateway,policy,refunds,ledgerAccounts,ledger,Clock.fixed(now, ZoneOffset.UTC),900);
         wallet=new Wallet(UUID.randomUUID(),new LedgerAccount("wallet-test","Wallet", AccountType.LIABILITY,"INR"),"INR");
     }
 
@@ -86,6 +90,7 @@ class PaymentServiceTest {
         when(holds.findExpiredForUpdate(wallet.getId(),AuthorizationHoldStatus.ACTIVE,now)).thenReturn(List.of());
         when(ledger.accountBalanceMinorUnits(wallet.getLedgerAccount().getId())).thenReturn(65000L);
         when(holds.sumActiveAmount(wallet.getId(),AuthorizationHoldStatus.ACTIVE,now)).thenReturn(10000L);
+        when(gateway.authorize(payment)).thenReturn(new GatewayResult("gw-"+payment.getId(),"net-"+payment.getId(),"00",GatewayResult.Outcome.APPROVED));
         when(holds.save(any(AuthorizationHold.class))).thenAnswer(call -> call.getArgument(0));
         assertThat(service.authorize(wallet.getId(),payment.getId()).getStatus()).isEqualTo(PaymentStatus.AUTHORIZED);
         UUID holdId=payment.getAuthorizationHoldId();
@@ -151,6 +156,41 @@ class PaymentServiceTest {
                 .isInstanceOf(WalletException.class)
                 .extracting(e -> ((WalletException)e).getErrorCode()).isEqualTo(WalletErrorCode.REFUND_EXCEEDS_CAPTURED_AMOUNT);
         verify(ledger).post(anyString(),anyString(),anyList());
+    }
+
+    @Test void issuerDeclineAndGatewayTimeoutHaveDeterministicFailureStates() {
+        Payment declined=new Payment(UUID.randomUUID(),wallet,"merchant-a",1000,"INR","FOOD","lunch","p-d",GatewayScenario.DECLINE,now);
+        Payment timedOut=new Payment(UUID.randomUUID(),wallet,"merchant-a",1000,"INR","FOOD","lunch","p-t",GatewayScenario.TIMEOUT,now);
+        when(wallets.findByIdForUpdate(wallet.getId())).thenReturn(Optional.of(wallet));
+        when(payments.findForUpdate(wallet.getId(),declined.getId())).thenReturn(Optional.of(declined));
+        when(payments.findForUpdate(wallet.getId(),timedOut.getId())).thenReturn(Optional.of(timedOut));
+        when(holds.findExpiredForUpdate(eq(wallet.getId()),eq(AuthorizationHoldStatus.ACTIVE),eq(now))).thenReturn(List.of());
+        when(ledger.accountBalanceMinorUnits(wallet.getLedgerAccount().getId())).thenReturn(50000L);
+        when(holds.sumActiveAmount(wallet.getId(),AuthorizationHoldStatus.ACTIVE,now)).thenReturn(0L);
+        allowPolicy(declined); allowPolicy(timedOut);
+        when(gateway.authorize(declined)).thenReturn(new GatewayResult("gw-"+declined.getId(),"net-"+declined.getId(),"05",GatewayResult.Outcome.DECLINED));
+        when(gateway.authorize(timedOut)).thenReturn(new GatewayResult("gw-"+timedOut.getId(),null,"GW_TIMEOUT",GatewayResult.Outcome.TIMEOUT));
+        assertThat(service.authorize(wallet.getId(),declined.getId()).getStatus()).isEqualTo(PaymentStatus.DECLINED);
+        assertThat(declined.getIssuerResponseCode()).isEqualTo("05");
+        assertThat(service.authorize(wallet.getId(),timedOut.getId()).getStatus()).isEqualTo(PaymentStatus.AUTHORIZATION_FAILED);
+        assertThat(timedOut.getDeclineReason()).isEqualTo("GATEWAY_TIMEOUT");
+        verify(holds,never()).save(any(AuthorizationHold.class));
+    }
+
+    @Test void otpRequiredCreatesHoldAndLeavesPaymentPending() {
+        Payment payment=new Payment(UUID.randomUUID(),wallet,"merchant-a",10000,"INR","FOOD","lunch","p-otp",GatewayScenario.OTP_REQUIRED,now);
+        when(wallets.findByIdForUpdate(wallet.getId())).thenReturn(Optional.of(wallet));
+        when(payments.findForUpdate(wallet.getId(),payment.getId())).thenReturn(Optional.of(payment));
+        when(holds.findExpiredForUpdate(eq(wallet.getId()),eq(AuthorizationHoldStatus.ACTIVE),eq(now))).thenReturn(List.of());
+        when(ledger.accountBalanceMinorUnits(wallet.getLedgerAccount().getId())).thenReturn(50000L);
+        when(holds.sumActiveAmount(wallet.getId(),AuthorizationHoldStatus.ACTIVE,now)).thenReturn(0L);
+        allowPolicy(payment);
+        when(gateway.authorize(payment)).thenReturn(new GatewayResult("gw-"+payment.getId(),"net-"+payment.getId(),"65",GatewayResult.Outcome.OTP_REQUIRED));
+        when(holds.save(any(AuthorizationHold.class))).thenAnswer(call -> call.getArgument(0));
+        assertThat(service.authorize(wallet.getId(),payment.getId()).getStatus()).isEqualTo(PaymentStatus.PENDING_APPROVAL);
+        assertThat(payment.getApprovalReason()).isEqualTo("OTP_REQUIRED");
+        assertThat(payment.getNetworkTransactionId()).isNotBlank();
+        verify(holds).save(any(AuthorizationHold.class));
     }
 
     private void allowPolicy(Payment payment) {

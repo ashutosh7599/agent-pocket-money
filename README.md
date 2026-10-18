@@ -86,9 +86,13 @@ GET /api/v1/wallets/{walletId}/holds?status=ACTIVE&page=0&size=20 lists active, 
 - POST /api/v1/wallets/{walletId}/payments/{paymentId}/void releases an active hold without changing ledger balance. Retry with the same Idempotency-Key safely returns the voided payment.
 - POST /api/v1/wallets/{walletId}/payments/{paymentId}/refunds accepts a positive amountMinorUnits value and an Idempotency-Key. Partial refunds are supported; the total cannot exceed the captured amount. Each refund posts balanced merchant-payable debit and wallet-liability credit lines.
 
+## Phase 7 mock payment ecosystem
+
+Payment creation accepts an optional gatewayScenario: APPROVE (default), DECLINE, TIMEOUT, or OTP_REQUIRED. The deterministic in-process gateway routes approved/declined/OTP requests through the mock card network and issuer, and returns gateway payment ID, network transaction ID, and issuer response code. A timeout stops before network routing. No real card data or external payment provider is used. OTP_REQUIRED leaves the payment pending with funds held for the approval flow.
+
 ## Run the API smoke suite in Insomnia
 
-Import [`api-tests/insomnia-agent-wallet-phase-2.json`](api-tests/insomnia-agent-wallet-phase-2.json) into Insomnia, open the imported collection, choose **Run Collection**, keep all requests selected in order, and click **Run**. The suite creates a wallet, funds it, verifies ledger and available balances, creates, lists, and releases a hold, checks policy configuration, payment authorization, capture, partial/full refund, and idempotency, insufficient available balance, and invalid requests. The collection saves generated wallet and idempotency values between requests.
+Import [`api-tests/insomnia-agent-wallet-phase-2.json`](api-tests/insomnia-agent-wallet-phase-2.json) into Insomnia, open the imported collection, choose **Run Collection**, keep all requests selected in order, and click **Run**. The suite creates a wallet, funds it, verifies ledger and available balances, creates, lists, and releases a hold, checks policy setup, payment authorization, capture, partial/full refund, gateway outcomes, and idempotency, insufficient available balance, and invalid requests. The collection saves generated wallet and idempotency values between requests.
 
 The included environment targets `http://localhost:8080` and funds the wallet with 65000 minor units (₹650.00). Change `base_url` if the app uses a different port. Each run creates new sandbox data in PostgreSQL; no real money is moved. See [`api-tests/README.md`](api-tests/README.md) for setup details.
 

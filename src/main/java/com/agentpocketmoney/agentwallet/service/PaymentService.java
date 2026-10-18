@@ -7,6 +7,7 @@ import com.agentpocketmoney.agentwallet.model.wallet.AuthorizationHold;
 import com.agentpocketmoney.agentwallet.model.wallet.AuthorizationHoldStatus;
 import com.agentpocketmoney.agentwallet.model.wallet.Payment;
 import com.agentpocketmoney.agentwallet.model.wallet.PaymentStatus;
+import com.agentpocketmoney.agentwallet.model.wallet.GatewayScenario;
 import com.agentpocketmoney.agentwallet.model.wallet.PolicyDecision;
 import com.agentpocketmoney.agentwallet.model.wallet.PaymentRefund;
 import com.agentpocketmoney.agentwallet.model.ledger.AccountType;
@@ -20,6 +21,8 @@ import com.agentpocketmoney.agentwallet.repository.PaymentRepository;
 import com.agentpocketmoney.agentwallet.repository.PaymentRefundRepository;
 import com.agentpocketmoney.agentwallet.repository.LedgerAccountRepository;
 import com.agentpocketmoney.agentwallet.repository.WalletRepository;
+import com.agentpocketmoney.agentwallet.mock.GatewayResult;
+import com.agentpocketmoney.agentwallet.mock.MockPaymentGateway;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
@@ -34,6 +37,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class PaymentService {
     private static final Logger logger = LoggerFactory.getLogger(PaymentService.class);
     private final WalletRepository wallets;
+    private final MockPaymentGateway gateway;
     private final PaymentRepository payments;
     private final AuthorizationHoldRepository holds;
     private final LedgerService ledger;
@@ -43,10 +47,10 @@ public class PaymentService {
     private final Clock clock;
     private final long authorizationTtlSeconds;
 
-    public PaymentService(WalletRepository wallets, PaymentRepository payments, AuthorizationHoldRepository holds, WalletPolicyService policy, PaymentRefundRepository refunds,
+    public PaymentService(WalletRepository wallets, PaymentRepository payments, AuthorizationHoldRepository holds, MockPaymentGateway gateway, WalletPolicyService policy, PaymentRefundRepository refunds,
                           LedgerAccountRepository ledgerAccounts, LedgerService ledger, Clock clock,
                           @Value("${payments.authorization-ttl-seconds:900}") long authorizationTtlSeconds) {
-        this.wallets=wallets; this.payments=payments; this.holds=holds; this.policy=policy; this.refunds=refunds;
+        this.wallets=wallets; this.payments=payments; this.holds=holds; this.gateway=gateway; this.policy=policy; this.refunds=refunds;
         this.ledgerAccounts=ledgerAccounts; this.ledger=ledger;
         this.clock=clock; this.authorizationTtlSeconds=authorizationTtlSeconds;
     }
@@ -54,13 +58,21 @@ public class PaymentService {
     @Transactional
     public Payment create(UUID walletId, String idempotencyKey, String merchantId, long amountMinorUnits,
                           String category, String purpose) {
+        return create(walletId,idempotencyKey,merchantId,amountMinorUnits,category,purpose,GatewayScenario.APPROVE);
+    }
+
+    @Transactional
+    public Payment create(UUID walletId, String idempotencyKey, String merchantId, long amountMinorUnits,
+                          String category, String purpose, GatewayScenario gatewayScenario) {
         validateCreate(idempotencyKey, merchantId, amountMinorUnits, category, purpose);
+        if(gatewayScenario==null) gatewayScenario=GatewayScenario.APPROVE;
         Wallet wallet = lockWallet(walletId);
         ensureActive(wallet);
         Payment prior = payments.findByWalletIdAndIdempotencyKey(walletId, idempotencyKey).orElse(null);
         if (prior != null) {
             if (prior.getAmountMinorUnits() != amountMinorUnits || !prior.getMerchantId().equals(merchantId)
-                    || !prior.getCategory().equals(category) || !prior.getPurpose().equals(purpose)) {
+                    || !prior.getCategory().equals(category) || !prior.getPurpose().equals(purpose)
+                    || prior.getGatewayScenario()!=gatewayScenario) {
                 throw new WalletException(WalletErrorCode.IDEMPOTENCY_KEY_REUSED,
                         "Idempotency key was already used for a different payment.");
             }
@@ -68,7 +80,7 @@ public class PaymentService {
         }
         Instant now=clock.instant();
         Payment payment=payments.save(new Payment(UUID.randomUUID(), wallet, merchantId, amountMinorUnits,
-                wallet.getCurrency(), category, purpose, idempotencyKey, now));
+                wallet.getCurrency(), category, purpose, idempotencyKey, gatewayScenario, now));
         AfterCommitAction.run(() -> logger.atInfo().addKeyValue("payment.id", payment.getId())
                 .addKeyValue("wallet.id", walletId).addKeyValue("amount.minor_units", amountMinorUnits)
                 .log("Payment created"));
@@ -97,15 +109,27 @@ public class PaymentService {
             logDecline(walletId,payment);
             return payment;
         }
+        GatewayResult gatewayResult=gateway.authorize(payment);
+        payment.recordGatewayResult(gatewayResult.gatewayPaymentId(),gatewayResult.networkTransactionId(),
+                gatewayResult.issuerResponseCode());
+        if(gatewayResult.outcome()==GatewayResult.Outcome.DECLINED){
+            payment.decline("ISSUER_DECLINED",now); logDecline(walletId,payment); return payment;
+        }
+        if(gatewayResult.outcome()==GatewayResult.Outcome.TIMEOUT){
+            payment.fail("GATEWAY_TIMEOUT",now); logDecline(walletId,payment); return payment;
+        }
         Instant expiresAt=now.plusSeconds(authorizationTtlSeconds);
         AuthorizationHold hold=holds.save(new AuthorizationHold(UUID.randomUUID(), wallet,
                 payment.getAmountMinorUnits(), expiresAt, now));
-        if (decision.result()==PolicyDecision.PENDING_APPROVAL) payment.requestApproval(hold.getId(),now);
-        else payment.authorize(hold.getId(), now);
-        AfterCommitAction.run(() -> logger.atInfo().addKeyValue("payment.id", paymentId)
-                .addKeyValue("wallet.id", walletId).addKeyValue("authorization_hold.id", hold.getId())
-                .addKeyValue("amount.minor_units", payment.getAmountMinorUnits())
-                .log("Payment authorized"));
+        boolean pending=decision.result()==PolicyDecision.PENDING_APPROVAL
+                || gatewayResult.outcome()==GatewayResult.Outcome.OTP_REQUIRED;
+        if(pending) payment.requestApproval(hold.getId(),
+                gatewayResult.outcome()==GatewayResult.Outcome.OTP_REQUIRED ? "OTP_REQUIRED" : decision.reasonCode(),now);
+        else payment.authorize(hold.getId(),now);
+        String event=pending ? "Payment awaiting approval" : "Payment authorized";
+        AfterCommitAction.run(() -> logger.atInfo().addKeyValue("payment.id",paymentId)
+                .addKeyValue("wallet.id",walletId).addKeyValue("authorization_hold.id",hold.getId())
+                .addKeyValue("amount.minor_units",payment.getAmountMinorUnits()).log(event));
         return payment;
     }
 

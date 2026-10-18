@@ -732,6 +732,180 @@
       "settingFollowRedirects": "global",
       "modified": 1792262241583,
       "created": 1792262241583
+    },
+    {
+      "_id": "req_issuer_decline_create",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "26 - Issuer decline - Create payment",
+      "description": "Run as part of the collection in listed order.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/payments",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"merchantId\": \"foodapp-demo\",\n  \"amountMinorUnits\": 1000,\n  \"category\": \"FOOD\",\n  \"purpose\": \"GATEWAY_TEST\",\n  \"gatewayScenario\": \"DECLINE\"\n}"
+      },
+      "headers": [
+        {
+          "name": "Idempotency-Key",
+          "value": "gateway-decline-{{ _.wallet_id }}"
+        },
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "insomnia.test('creates a payment scenario', () => { insomnia.expect(insomnia.response.code).to.eql(201); });\ninsomnia.environment.set('issuer_decline_payment_id', insomnia.response.json().id);",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792262241585,
+      "created": 1792262241585
+    },
+    {
+      "_id": "req_issuer_decline_authorize",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "26 - Issuer decline - Authorize payment",
+      "description": "Run as part of the collection in listed order.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/payments/{{ _.issuer_decline_payment_id }}/authorize",
+      "body": {},
+      "headers": [],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "const p=insomnia.response.json(); insomnia.test('gateway scenario returns the expected result', () => { insomnia.expect(insomnia.response.code).to.eql(200); insomnia.expect(p.status).to.eql('DECLINED'); insomnia.expect(p.issuerResponseCode).to.eql('05'); insomnia.expect(p.gatewayPaymentId).to.be.a('string'); });",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792262241585,
+      "created": 1792262241585
+    },
+    {
+      "_id": "req_gateway_timeout_create",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "28 - Gateway timeout - Create payment",
+      "description": "Run as part of the collection in listed order.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/payments",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"merchantId\": \"foodapp-demo\",\n  \"amountMinorUnits\": 1000,\n  \"category\": \"FOOD\",\n  \"purpose\": \"GATEWAY_TEST\",\n  \"gatewayScenario\": \"TIMEOUT\"\n}"
+      },
+      "headers": [
+        {
+          "name": "Idempotency-Key",
+          "value": "gateway-timeout-{{ _.wallet_id }}"
+        },
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "insomnia.test('creates a payment scenario', () => { insomnia.expect(insomnia.response.code).to.eql(201); });\ninsomnia.environment.set('gateway_timeout_payment_id', insomnia.response.json().id);",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792262241585,
+      "created": 1792262241585
+    },
+    {
+      "_id": "req_gateway_timeout_authorize",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "28 - Gateway timeout - Authorize payment",
+      "description": "Run as part of the collection in listed order.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/payments/{{ _.gateway_timeout_payment_id }}/authorize",
+      "body": {},
+      "headers": [],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "const p=insomnia.response.json(); insomnia.test('gateway scenario returns the expected result', () => { insomnia.expect(insomnia.response.code).to.eql(200); insomnia.expect(p.status).to.eql('AUTHORIZATION_FAILED'); insomnia.expect(p.declineReason).to.eql('GATEWAY_TIMEOUT'); });",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792262241585,
+      "created": 1792262241585
+    },
+    {
+      "_id": "req_otp_challenge_create",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "30 - OTP approval challenge - Create payment",
+      "description": "Run as part of the collection in listed order.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/payments",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"merchantId\": \"foodapp-demo\",\n  \"amountMinorUnits\": 1000,\n  \"category\": \"FOOD\",\n  \"purpose\": \"GATEWAY_TEST\",\n  \"gatewayScenario\": \"OTP_REQUIRED\"\n}"
+      },
+      "headers": [
+        {
+          "name": "Idempotency-Key",
+          "value": "gateway-otp_required-{{ _.wallet_id }}"
+        },
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "insomnia.test('creates a payment scenario', () => { insomnia.expect(insomnia.response.code).to.eql(201); });\ninsomnia.environment.set('otp_challenge_payment_id', insomnia.response.json().id);",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792262241585,
+      "created": 1792262241585
+    },
+    {
+      "_id": "req_otp_challenge_authorize",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "30 - OTP approval challenge - Authorize payment",
+      "description": "Run as part of the collection in listed order.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/payments/{{ _.otp_challenge_payment_id }}/authorize",
+      "body": {},
+      "headers": [],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "const p=insomnia.response.json(); insomnia.test('gateway scenario returns the expected result', () => { insomnia.expect(insomnia.response.code).to.eql(200); insomnia.expect(p.status).to.eql('PENDING_APPROVAL'); insomnia.expect(p.approvalReason).to.eql('OTP_REQUIRED'); insomnia.expect(p.issuerResponseCode).to.eql('65'); });",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792262241585,
+      "created": 1792262241585
     }
   ]
 }

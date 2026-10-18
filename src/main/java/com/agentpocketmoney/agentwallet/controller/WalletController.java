@@ -93,7 +93,7 @@ public class WalletController {
             @RequestHeader("Idempotency-Key") String idempotencyKey,
             @Valid @RequestBody CreatePaymentRequest request) {
         var payment = payments.create(walletId, idempotencyKey, request.merchantId(),
-                request.amountMinorUnits(), request.category(), request.purpose());
+                request.amountMinorUnits(), request.category(), request.purpose(), request.gatewayScenario());
         return ResponseEntity.created(URI.create("/api/v1/wallets/" + walletId + "/payments/" + payment.getId()))
                 .body(PaymentResponse.from(payment));
     }
