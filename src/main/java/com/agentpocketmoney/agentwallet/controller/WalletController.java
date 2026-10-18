@@ -103,6 +103,18 @@ public class WalletController {
         return PaymentResponse.from(payments.authorize(walletId, paymentId));
     }
 
+    @PostMapping("/{walletId}/payments/{paymentId}/approve")
+    public PaymentResponse approvePayment(@PathVariable UUID walletId,@PathVariable UUID paymentId,
+            @RequestHeader("Idempotency-Key") String idempotencyKey){
+        return PaymentResponse.from(payments.approvePending(walletId,paymentId,idempotencyKey));
+    }
+
+    @PostMapping("/{walletId}/payments/{paymentId}/reject")
+    public PaymentResponse rejectPayment(@PathVariable UUID walletId,@PathVariable UUID paymentId,
+            @RequestHeader("Idempotency-Key") String idempotencyKey){
+        return PaymentResponse.from(payments.rejectPending(walletId,paymentId,idempotencyKey));
+    }
+
     @PostMapping("/{walletId}/payments/{paymentId}/capture")
     public PaymentResponse capturePayment(@PathVariable UUID walletId, @PathVariable UUID paymentId,
             @RequestHeader("Idempotency-Key") String idempotencyKey) {

@@ -110,6 +110,12 @@ All `/api/v1/**` endpoints require an API key in the `X-API-Key` header. Configu
 
 Successful wallet, hold, payment, policy, and reconciliation operations write append-only audit rows with the actor key fingerprint, action, entity ID, trace ID, and timestamp. Admins can inspect them at `GET /api/v1/admin/audit-events?page=0&size=20`.
 
+## Phase 11 agent payment interface
+
+- An admin creates a one-time spend mandate under a wallet with purpose, merchant, category, currency, maximum amount, and expiry.
+- An agent requests payment using `POST /api/v1/wallets/{walletId}/mandates/{mandateId}/payments` and an `Idempotency-Key`. The API enforces the mandate, creates and authorizes the payment, and returns the resulting payment state. A repeated request with the same key returns the same payment; a different request cannot reuse the consumed mandate.
+- Payments awaiting manual/OTP approval can be approved or rejected by an admin using the wallet payment `/approve` or `/reject` routes with an `Idempotency-Key`. Rejection releases the authorization hold.
+
 ## Run the API smoke suite in Insomnia
 
 Import [`api-tests/insomnia-agent-wallet-phase-2.json`](api-tests/insomnia-agent-wallet-phase-2.json) into Insomnia, open the imported collection, choose **Run Collection**, keep all requests selected in order, and click **Run**. The suite creates a wallet, funds it, verifies ledger and available balances, creates, lists, and releases a hold, checks policy setup, payment authorization, capture, partial/full refund, gateway outcomes, and idempotency, insufficient available balance, and invalid requests. The collection saves generated wallet and idempotency values between requests.

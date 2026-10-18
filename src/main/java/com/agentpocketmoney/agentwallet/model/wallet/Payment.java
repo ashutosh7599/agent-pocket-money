@@ -40,6 +40,10 @@ public class Payment {
     private String captureIdempotencyKey;
     @Column(name = "void_idempotency_key", length = 128)
     private String voidIdempotencyKey;
+    @Column(name = "approval_decision_key", length = 128)
+    private String approvalDecisionKey;
+    @Column(name = "approval_decision", length = 16)
+    private String approvalDecision;
     @Enumerated(EnumType.STRING) @Column(name="gateway_scenario",nullable=false,length=16)
     private GatewayScenario gatewayScenario;
     @Column(name="gateway_payment_id",length=64) private String gatewayPaymentId;
@@ -78,6 +82,16 @@ public class Payment {
         if (status != PaymentStatus.CREATED) return false;
         status=PaymentStatus.PENDING_APPROVAL; authorizationHoldId=holdId; approvalReason=reason;
         updatedAt=now.truncatedTo(ChronoUnit.MICROS); return true;
+    }
+    public boolean approvePending(String key,Instant now){
+        if(status!=PaymentStatus.PENDING_APPROVAL)return false;
+        status=PaymentStatus.AUTHORIZED;approvalDecision="APPROVED";approvalDecisionKey=key;
+        updatedAt=now.truncatedTo(ChronoUnit.MICROS);return true;
+    }
+    public boolean rejectPending(String key,Instant now){
+        if(status!=PaymentStatus.PENDING_APPROVAL)return false;
+        status=PaymentStatus.DECLINED;declineReason="HUMAN_REJECTED";approvalDecision="REJECTED";approvalDecisionKey=key;
+        updatedAt=now.truncatedTo(ChronoUnit.MICROS);return true;
     }
     public boolean fail(String reason,Instant now) {
         if(status!=PaymentStatus.CREATED) return false;
@@ -124,5 +138,6 @@ public class Payment {
     public long getAmountRefundedMinorUnits(){return amountRefundedMinorUnits;}
     public String getCaptureIdempotencyKey(){return captureIdempotencyKey;}
     public String getVoidIdempotencyKey(){return voidIdempotencyKey;}
+    public String getApprovalDecisionKey(){return approvalDecisionKey;} public String getApprovalDecision(){return approvalDecision;}
     public Instant getCreatedAt(){return createdAt;} public Instant getUpdatedAt(){return updatedAt;}
 }

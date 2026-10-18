@@ -143,6 +143,32 @@ public class PaymentService {
     }
 
     @Transactional
+    @Audited(action="PAYMENT_APPROVAL_ACCEPTED",entityType="payment")
+    public Payment approvePending(UUID walletId,UUID paymentId,String idempotencyKey){
+        requireIdempotencyKey(idempotencyKey);lockWallet(walletId);Payment payment=lockPayment(walletId,paymentId);
+        if(payment.getStatus()==PaymentStatus.AUTHORIZED&&idempotencyKey.equals(payment.getApprovalDecisionKey()))return payment;
+        if(payment.getStatus()!=PaymentStatus.PENDING_APPROVAL)throw stateConflict("Only a pending payment can be approved.");
+        Instant now=clock.instant();AuthorizationHold hold=holdForPayment(walletId,payment);
+        if(hold.getStatus()!=AuthorizationHoldStatus.ACTIVE||!hold.getExpiresAt().isAfter(now)){
+            hold.expire(now);payment.expire(now);outbox.recordPayment(payment,"payment.expired",now);return payment;
+        }
+        payment.approvePending(idempotencyKey,now);outbox.recordPayment(payment,"payment.approved",now);return payment;
+    }
+
+    @Transactional
+    @Audited(action="PAYMENT_APPROVAL_REJECTED",entityType="payment")
+    public Payment rejectPending(UUID walletId,UUID paymentId,String idempotencyKey){
+        requireIdempotencyKey(idempotencyKey);lockWallet(walletId);Payment payment=lockPayment(walletId,paymentId);
+        if(payment.getStatus()==PaymentStatus.DECLINED&&"REJECTED".equals(payment.getApprovalDecision())
+                &&idempotencyKey.equals(payment.getApprovalDecisionKey()))return payment;
+        if(payment.getStatus()!=PaymentStatus.PENDING_APPROVAL)throw stateConflict("Only a pending payment can be rejected.");
+        Instant now=clock.instant();AuthorizationHold hold=holdForPayment(walletId,payment);
+        if(hold.getStatus()==AuthorizationHoldStatus.ACTIVE&&hold.getExpiresAt().isAfter(now))hold.release(now);
+        else hold.expire(now);
+        payment.rejectPending(idempotencyKey,now);outbox.recordPayment(payment,"payment.rejected",now);return payment;
+    }
+
+    @Transactional
     @Audited(action="PAYMENT_CAPTURED",entityType="payment")
     public Payment capture(UUID walletId, UUID paymentId, String idempotencyKey) {
         requireIdempotencyKey(idempotencyKey);

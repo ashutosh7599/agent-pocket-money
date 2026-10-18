@@ -1146,7 +1146,178 @@
       "settingFollowRedirects": "global",
       "modified": 1792320000000,
       "created": 1792320000000
+    },
+    {
+      "_id": "req_approve_otp_payment",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "34 - Human approves OTP challenge",
+      "description": "Run as part of the collection in listed order.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/payments/{{ _.otp_challenge_payment_id }}/approve",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{}"
+      },
+      "headers": [
+        {
+          "name": "Idempotency-Key",
+          "value": "approval-{{ _.otp_challenge_payment_id }}"
+        },
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "insomnia.test('human approval authorizes the pending payment', () => {\n  insomnia.expect(insomnia.response.code).to.eql(200);\n  insomnia.expect(insomnia.response.json().status).to.eql('AUTHORIZED');\n});",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792320000000,
+      "created": 1792320000000
+    },
+    {
+      "_id": "req_create_mandate",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "35 - Admin creates one-time spend mandate",
+      "description": "Run as part of the collection in listed order.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/mandates",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"purpose\": \"FOOD_DELIVERY\",\n  \"merchantId\": \"foodapp-demo\",\n  \"maxAmountMinorUnits\": 12000,\n  \"currency\": \"INR\",\n  \"category\": \"FOOD\",\n  \"expiresAt\": \"{{ _.mandate_expires_at }}\"\n}"
+      },
+      "headers": [
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "insomnia.environment.set('mandate_expires_at', new Date(Date.now() + 3600000).toISOString());",
+      "afterResponseScript": "insomnia.test('creates a one-time INR spend mandate', () => {\n  insomnia.expect(insomnia.response.code).to.eql(201);\n  insomnia.expect(insomnia.response.json().status).to.eql('ACTIVE');\n  insomnia.expect(insomnia.response.json().maxAmountMinorUnits).to.eql(12000);\n});\ninsomnia.environment.set('spend_mandate_id', insomnia.response.json().id);",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792320000000,
+      "created": 1792320000000
+    },
+    {
+      "_id": "req_agent_mandate_payment",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "36 - Agent requests payment using mandate",
+      "description": "Run as part of the collection in listed order.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/mandates/{{ _.spend_mandate_id }}/payments",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"amountMinorUnits\": 10000\n}"
+      },
+      "headers": [
+        {
+          "name": "Idempotency-Key",
+          "value": "mandate-payment-{{ _.spend_mandate_id }}"
+        },
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "insomnia.test('creates an authorized payment within mandate limits', () => {\n  insomnia.expect(insomnia.response.code).to.eql(200);\n  insomnia.expect(insomnia.response.json().status).to.eql('AUTHORIZED');\n});\ninsomnia.environment.set('mandate_payment_id', insomnia.response.json().id);",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792320000000,
+      "created": 1792320000000
+    },
+    {
+      "_id": "req_retry_mandate_payment",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "37 - Retry mandate payment idempotently",
+      "description": "Run as part of the collection in listed order.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/mandates/{{ _.spend_mandate_id }}/payments",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"amountMinorUnits\": 10000\n}"
+      },
+      "headers": [
+        {
+          "name": "Idempotency-Key",
+          "value": "mandate-payment-{{ _.spend_mandate_id }}"
+        },
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "insomnia.test('returns the same payment for a retry', () => {\n  insomnia.expect(insomnia.response.code).to.eql(200);\n  insomnia.expect(insomnia.response.json().id).to.eql(insomnia.environment.get('mandate_payment_id'));\n});",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792320000000,
+      "created": 1792320000000
+    },
+    {
+      "_id": "req_exceed_mandate_reuse",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "38 - Reject second payment against consumed mandate",
+      "description": "Run as part of the collection in listed order.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/mandates/{{ _.spend_mandate_id }}/payments",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"amountMinorUnits\": 10000\n}"
+      },
+      "headers": [
+        {
+          "name": "Idempotency-Key",
+          "value": "second-mandate-payment-{{ _.spend_mandate_id }}"
+        },
+        {
+          "name": "X-API-Key",
+          "value": "{{ _.api_key }}"
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "insomnia.test('does not allow a mandate to be spent twice', () => {\n  insomnia.expect(insomnia.response.code).to.eql(409);\n  insomnia.expect(insomnia.response.json().errorCode).to.eql('MANDATE_CONSUMED');\n});",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792320000000,
+      "created": 1792320000000
     }
   ],
-  "_export_date": "2026-10-18T13:14:32.965833Z"
+  "_export_date": "2026-10-18T13:18:53.943056Z"
 }
