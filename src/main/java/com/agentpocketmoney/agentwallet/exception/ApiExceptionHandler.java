@@ -38,8 +38,8 @@ public class ApiExceptionHandler {
     @ExceptionHandler(WalletException.class)
     public ProblemDetail handleWalletException(WalletException exception) {
         HttpStatus status = switch (exception.getErrorCode()) {
-            case WALLET_NOT_FOUND, HOLD_NOT_FOUND -> HttpStatus.NOT_FOUND;
-            case WALLET_FROZEN, WALLET_CLOSED, IDEMPOTENCY_KEY_REUSED, INSUFFICIENT_AVAILABLE_BALANCE -> HttpStatus.CONFLICT;
+            case WALLET_NOT_FOUND, HOLD_NOT_FOUND, PAYMENT_NOT_FOUND -> HttpStatus.NOT_FOUND;
+            case WALLET_FROZEN, WALLET_CLOSED, IDEMPOTENCY_KEY_REUSED, INSUFFICIENT_AVAILABLE_BALANCE, PAYMENT_STATE_CONFLICT -> HttpStatus.CONFLICT;
             case INVALID_WALLET_REQUEST -> HttpStatus.BAD_REQUEST;
         };
         ProblemDetail problem = problem(status, exception.getMessage());

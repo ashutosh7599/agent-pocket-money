@@ -3,6 +3,8 @@ package com.agentpocketmoney.agentwallet.exception;
 public enum WalletErrorCode {
     WALLET_NOT_FOUND,
     HOLD_NOT_FOUND,
+    PAYMENT_NOT_FOUND,
+    PAYMENT_STATE_CONFLICT,
     INSUFFICIENT_AVAILABLE_BALANCE,
     WALLET_FROZEN,
     WALLET_CLOSED,

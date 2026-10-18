@@ -17,6 +17,8 @@ import org.springframework.web.bind.annotation.RestController;
 import com.agentpocketmoney.agentwallet.dto.AuthorizationHoldPage;
 import com.agentpocketmoney.agentwallet.dto.AuthorizationHoldResponse;
 import com.agentpocketmoney.agentwallet.dto.CreateAuthorizationHoldRequest;
+import com.agentpocketmoney.agentwallet.dto.CreatePaymentRequest;
+import com.agentpocketmoney.agentwallet.dto.PaymentResponse;
 import com.agentpocketmoney.agentwallet.dto.TopUpRequest;
 import com.agentpocketmoney.agentwallet.dto.TopUpResponse;
 import com.agentpocketmoney.agentwallet.dto.WalletResponse;
@@ -27,6 +29,7 @@ import com.agentpocketmoney.agentwallet.model.wallet.AuthorizationHoldStatus;
 import com.agentpocketmoney.agentwallet.model.wallet.TopUpResult;
 import com.agentpocketmoney.agentwallet.exception.WalletErrorCode;
 import com.agentpocketmoney.agentwallet.exception.WalletException;
+import com.agentpocketmoney.agentwallet.service.PaymentService;
 import com.agentpocketmoney.agentwallet.service.WalletService;
 import com.agentpocketmoney.agentwallet.model.wallet.WalletTransactionRecord;
 
@@ -36,9 +39,11 @@ import jakarta.validation.Valid;
 @RequestMapping("/api/v1/wallets")
 public class WalletController {
     private final WalletService wallets;
+    private final PaymentService payments;
 
-    public WalletController(WalletService wallets) {
+    public WalletController(WalletService wallets, PaymentService payments) {
         this.wallets = wallets;
+        this.payments = payments;
     }
 
     @PostMapping
@@ -79,6 +84,26 @@ public class WalletController {
     @PostMapping("/{walletId}/holds/{holdId}/release")
     public AuthorizationHoldResponse releaseHold(@PathVariable UUID walletId, @PathVariable UUID holdId) {
         return AuthorizationHoldResponse.from(wallets.releaseHold(walletId, holdId));
+    }
+
+    @PostMapping("/{walletId}/payments")
+    public ResponseEntity<PaymentResponse> createPayment(@PathVariable UUID walletId,
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @Valid @RequestBody CreatePaymentRequest request) {
+        var payment = payments.create(walletId, idempotencyKey, request.merchantId(),
+                request.amountMinorUnits(), request.category(), request.purpose());
+        return ResponseEntity.created(URI.create("/api/v1/wallets/" + walletId + "/payments/" + payment.getId()))
+                .body(PaymentResponse.from(payment));
+    }
+
+    @PostMapping("/{walletId}/payments/{paymentId}/authorize")
+    public PaymentResponse authorizePayment(@PathVariable UUID walletId, @PathVariable UUID paymentId) {
+        return PaymentResponse.from(payments.authorize(walletId, paymentId));
+    }
+
+    @GetMapping("/{walletId}/payments/{paymentId}")
+    public PaymentResponse getPayment(@PathVariable UUID walletId, @PathVariable UUID paymentId) {
+        return PaymentResponse.from(payments.get(walletId, paymentId));
     }
 
     @PostMapping("/{walletId}/top-ups")

@@ -68,9 +68,15 @@ GET /api/v1/wallets/{walletId}/holds?status=ACTIVE&page=0&size=20 lists active, 
 - `GET /api/v1/wallets/{walletId}` keeps `balanceMinorUnits` as the ledger balance and includes `heldBalanceMinorUnits` and `availableBalanceMinorUnits`. Only active, unexpired holds count against available funds.
 - A scheduled worker expires due holds every 30 seconds by default. Wallet reads and hold operations also expire due holds for that wallet. Configure `wallet.holds.expiry-poll-interval-ms` to change the poll interval.
 
+## Phase 4 payment authorization
+
+- POST /api/v1/wallets/{walletId}/payments creates a payment in CREATED state. Send an Idempotency-Key header and merchant, amount, category, and purpose. Matching retries return the original payment; a changed request with the same key returns HTTP 409.
+- POST /api/v1/wallets/{walletId}/payments/{paymentId}/authorize authorizes the payment and reserves funds with an expiring hold. Repeated authorization requests return the same payment state without creating another hold. Insufficient available balance declines the payment.
+- GET /api/v1/wallets/{walletId}/payments/{paymentId} returns the wallet-scoped payment state.
+
 ## Run the API smoke suite in Insomnia
 
-Import [`api-tests/insomnia-agent-wallet-phase-2.json`](api-tests/insomnia-agent-wallet-phase-2.json) into Insomnia, open the imported collection, choose **Run Collection**, keep all requests selected in order, and click **Run**. The suite creates a wallet, funds it, verifies ledger and available balances, creates and releases a hold, checks insufficient available balance and top-up idempotency, and confirms invalid requests return safe errors. The collection saves generated wallet and idempotency values between requests.
+Import [`api-tests/insomnia-agent-wallet-phase-2.json`](api-tests/insomnia-agent-wallet-phase-2.json) into Insomnia, open the imported collection, choose **Run Collection**, keep all requests selected in order, and click **Run**. The suite creates a wallet, funds it, verifies ledger and available balances, creates, lists, and releases a hold, checks payment authorization and idempotency, insufficient available balance, and invalid requests. The collection saves generated wallet and idempotency values between requests.
 
 The included environment targets `http://localhost:8080` and funds the wallet with 65000 minor units (₹650.00). Change `base_url` if the app uses a different port. Each run creates new sandbox data in PostgreSQL; no real money is moved. See [`api-tests/README.md`](api-tests/README.md) for setup details.
 

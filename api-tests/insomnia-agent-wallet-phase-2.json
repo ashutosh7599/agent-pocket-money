@@ -35,7 +35,7 @@
       "parameters": [],
       "authentication": {},
       "preRequestScript": "",
-      "afterResponseScript": "insomnia.test('returns 201 Created', () => {\n  insomnia.expect(insomnia.response.code).to.eql(201);\n});\nconst wallet = insomnia.response.json();\ninsomnia.test('creates an active INR wallet with zero balance', () => {\n  insomnia.expect(wallet.status).to.eql('ACTIVE');\n  insomnia.expect(wallet.currency).to.eql('INR');\n  insomnia.expect(wallet.balanceMinorUnits).to.eql(0);\n  insomnia.expect(wallet.heldBalanceMinorUnits).to.eql(0);\n  insomnia.expect(wallet.availableBalanceMinorUnits).to.eql(0);\n  insomnia.expect(wallet.id).to.be.a('string');\n});\ninsomnia.environment.set('wallet_id', wallet.id);\ninsomnia.environment.set('topup_idempotency_key', 'insomnia-smoke-' + wallet.id);",
+      "afterResponseScript": "insomnia.test('returns 201 Created', () => {\n  insomnia.expect(insomnia.response.code).to.eql(201);\n});\nconst wallet = insomnia.response.json();\ninsomnia.test('creates an active INR wallet with zero balance', () => {\n  insomnia.expect(wallet.status).to.eql('ACTIVE');\n  insomnia.expect(wallet.currency).to.eql('INR');\n  insomnia.expect(wallet.balanceMinorUnits).to.eql(0);\n  insomnia.expect(wallet.heldBalanceMinorUnits).to.eql(0);\n  insomnia.expect(wallet.availableBalanceMinorUnits).to.eql(0);\n  insomnia.expect(wallet.id).to.be.a('string');\n});\ninsomnia.environment.set('wallet_id', wallet.id);\ninsomnia.environment.set('topup_idempotency_key', 'insomnia-smoke-' + wallet.id);\ninsomnia.environment.set('payment_idempotency_key', 'payment-' + wallet.id);",
       "settingStoreCookies": true,
       "settingSendCookies": true,
       "settingDisableRenderRequestBody": false,
@@ -395,6 +395,122 @@
       "settingFollowRedirects": "global",
       "modified": 1792262241579,
       "created": 1792262241579
+    },
+    {
+      "_id": "req_create_payment",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "15 - Create a payment request",
+      "description": "Run as part of the collection in listed order.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/payments",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"merchantId\": \"foodapp-demo\",\n  \"amountMinorUnits\": 20000,\n  \"category\": \"FOOD\",\n  \"purpose\": \"LUNCH\"\n}"
+      },
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Idempotency-Key",
+          "value": "{{ _.payment_idempotency_key }}"
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "insomnia.test('returns 201 Created', () => { insomnia.expect(insomnia.response.code).to.eql(201); });\nconst payment = insomnia.response.json();\ninsomnia.test('creates a payment ready for authorization', () => {\n  insomnia.expect(payment.status).to.eql('CREATED');\n  insomnia.expect(payment.amountMinorUnits).to.eql(20000);\n});\ninsomnia.environment.set('payment_id', payment.id);",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792262241582,
+      "created": 1792262241582
+    },
+    {
+      "_id": "req_retry_payment",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "16 - Retry payment creation idempotently",
+      "description": "Run as part of the collection in listed order.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/payments",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"merchantId\": \"foodapp-demo\",\n  \"amountMinorUnits\": 20000,\n  \"category\": \"FOOD\",\n  \"purpose\": \"LUNCH\"\n}"
+      },
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "Idempotency-Key",
+          "value": "{{ _.payment_idempotency_key }}"
+        }
+      ],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "insomnia.test('returns the original payment', () => {\n  insomnia.expect(insomnia.response.code).to.eql(201);\n  insomnia.expect(insomnia.response.json().id).to.eql(insomnia.environment.get('payment_id'));\n});",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792262241582,
+      "created": 1792262241582
+    },
+    {
+      "_id": "req_authorize_payment",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "17 - Authorize payment",
+      "description": "Run as part of the collection in listed order.",
+      "method": "POST",
+      "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}/payments/{{ _.payment_id }}/authorize",
+      "body": {},
+      "headers": [],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "insomnia.test('returns 200 OK', () => { insomnia.expect(insomnia.response.code).to.eql(200); });\nconst payment = insomnia.response.json();\ninsomnia.test('authorizes the payment and creates a hold', () => {\n  insomnia.expect(payment.status).to.eql('AUTHORIZED');\n  insomnia.expect(payment.authorizationHoldId).to.be.a('string');\n});",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792262241582,
+      "created": 1792262241582
+    },
+    {
+      "_id": "req_payment_balance",
+      "_type": "request",
+      "parentId": "wrk_agent_wallet_phase_2",
+      "name": "18 - Verify authorization reduces available balance",
+      "description": "Run as part of the collection in listed order.",
+      "method": "GET",
+      "url": "{{ _.base_url }}/api/v1/wallets/{{ _.wallet_id }}",
+      "body": {},
+      "headers": [],
+      "parameters": [],
+      "authentication": {},
+      "preRequestScript": "",
+      "afterResponseScript": "insomnia.test('returns 200 OK', () => { insomnia.expect(insomnia.response.code).to.eql(200); });\nconst wallet = insomnia.response.json();\ninsomnia.test('payment authorization reserves funds', () => {\n  insomnia.expect(wallet.heldBalanceMinorUnits).to.eql(20000);\n  insomnia.expect(wallet.availableBalanceMinorUnits).to.eql(45000);\n});",
+      "settingStoreCookies": true,
+      "settingSendCookies": true,
+      "settingDisableRenderRequestBody": false,
+      "settingEncodeUrl": true,
+      "settingRebuildPath": true,
+      "settingFollowRedirects": "global",
+      "modified": 1792262241582,
+      "created": 1792262241582
     }
   ]
 }
