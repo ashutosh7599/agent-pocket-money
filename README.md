@@ -10,15 +10,17 @@ Sandbox backend project for learning safe agent spending and payment systems. Ph
 
 ## Run
 
-Start PostgreSQL and the OpenTelemetry Collector using Compose, then run the application. Flyway creates the ledger schema on startup. The collector accepts OTLP over HTTP on port 4318 and prints a compact receipt for exported logs.
+Start PostgreSQL and the OpenTelemetry Collector using Compose, then run the application. Flyway applies the database schema on startup. The collector accepts OTLP over HTTP on port 4318 and prints a compact receipt for exported logs.
 
 ```bash
 docker compose up -d postgres otel-collector
-mvn spring-boot:run
+WALLET_API_KEYS='<admin-key>:ADMIN' mvn spring-boot:run
 ```
 
 The default local database settings match `docker-compose.yml`. Override them with `DATABASE_URL`, `DATABASE_USERNAME`, and `DATABASE_PASSWORD` as needed.
 Set `OTEL_EXPORTER_OTLP_ENDPOINT` to point at a different collector. Logs and traces are exported over OTLP HTTP; metrics are disabled for now.
+
+Swagger UI is available at `http://localhost:8080/swagger-ui.html`; the OpenAPI JSON is at `/v3/api-docs`. Use the **Authorize** button to enter an API key. The public health endpoint is `/actuator/health` and includes the PostgreSQL readiness check. Docker Compose also marks PostgreSQL healthy after `pg_isready` succeeds.
 
 ## Package layout
 
@@ -32,7 +34,7 @@ Application code lives under `com.agentpocketmoney.agentwallet` and is grouped b
 - `service` contains business operations.
 - `config` contains application configuration and startup hooks.
 
-Run the ledger unit tests with:
+Run the unit and safety tests with:
 
 ```bash
 mvn test

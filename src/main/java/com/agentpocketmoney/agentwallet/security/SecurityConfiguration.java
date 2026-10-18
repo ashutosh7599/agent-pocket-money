@@ -31,7 +31,7 @@ public class SecurityConfiguration {
                     response.getWriter().write("{\"status\":403,\"errorCode\":\"FORBIDDEN\",\"detail\":\"Access denied.\"}");
                 }))
                 .authorizeHttpRequests(auth->auth
-                        .requestMatchers("/actuator/health/**","/swagger-ui/**","/v3/api-docs/**").permitAll()
+                        .requestMatchers("/actuator/health/**","/swagger-ui.html","/swagger-ui/**","/v3/api-docs/**").permitAll()
                         .requestMatchers(HttpMethod.POST,"/api/v1/webhooks/**").hasAnyRole("WEBHOOK","ADMIN")
                         .requestMatchers(HttpMethod.POST,"/api/v1/wallets").hasRole("ADMIN")
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
