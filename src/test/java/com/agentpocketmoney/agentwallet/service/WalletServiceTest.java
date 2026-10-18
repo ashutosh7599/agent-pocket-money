@@ -48,6 +48,7 @@ class WalletServiceTest {
     @Mock LedgerAccountRepository ledgerAccounts;
     @Mock LedgerService ledger;
     @Mock AuthorizationHoldRepository holds;
+    @Mock OutboxService outbox;
 
     private final Instant now = Instant.parse("2026-10-18T12:00:00Z");
 
@@ -59,7 +60,7 @@ class WalletServiceTest {
     @BeforeEach
     void setUp() {
         service = new WalletService(wallets, topUps, transactions, ledgerAccounts, ledger, holds,
-                Clock.fixed(now, ZoneOffset.UTC));
+                Clock.fixed(now, ZoneOffset.UTC), outbox);
         walletAccount = new LedgerAccount("wallet-test", "Test wallet", AccountType.LIABILITY, "INR");
         settlementAccount = new LedgerAccount("sandbox-settlement-inr", "Settlement", AccountType.ASSET, "INR");
         wallet = new Wallet(UUID.randomUUID(), walletAccount, "INR");

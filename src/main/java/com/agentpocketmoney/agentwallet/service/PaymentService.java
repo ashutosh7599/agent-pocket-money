@@ -37,6 +37,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class PaymentService {
     private static final Logger logger = LoggerFactory.getLogger(PaymentService.class);
     private final WalletRepository wallets;
+    private final OutboxService outbox;
     private final MockPaymentGateway gateway;
     private final PaymentRepository payments;
     private final AuthorizationHoldRepository holds;
@@ -47,10 +48,10 @@ public class PaymentService {
     private final Clock clock;
     private final long authorizationTtlSeconds;
 
-    public PaymentService(WalletRepository wallets, PaymentRepository payments, AuthorizationHoldRepository holds, MockPaymentGateway gateway, WalletPolicyService policy, PaymentRefundRepository refunds,
+    public PaymentService(WalletRepository wallets, PaymentRepository payments, AuthorizationHoldRepository holds, MockPaymentGateway gateway, WalletPolicyService policy, OutboxService outbox, PaymentRefundRepository refunds,
                           LedgerAccountRepository ledgerAccounts, LedgerService ledger, Clock clock,
                           @Value("${payments.authorization-ttl-seconds:900}") long authorizationTtlSeconds) {
-        this.wallets=wallets; this.payments=payments; this.holds=holds; this.gateway=gateway; this.policy=policy; this.refunds=refunds;
+        this.wallets=wallets; this.payments=payments; this.holds=holds; this.gateway=gateway; this.policy=policy; this.outbox=outbox; this.refunds=refunds;
         this.ledgerAccounts=ledgerAccounts; this.ledger=ledger;
         this.clock=clock; this.authorizationTtlSeconds=authorizationTtlSeconds;
     }
@@ -81,6 +82,7 @@ public class PaymentService {
         Instant now=clock.instant();
         Payment payment=payments.save(new Payment(UUID.randomUUID(), wallet, merchantId, amountMinorUnits,
                 wallet.getCurrency(), category, purpose, idempotencyKey, gatewayScenario, now));
+        outbox.recordPayment(payment,"payment.created",now);
         AfterCommitAction.run(() -> logger.atInfo().addKeyValue("payment.id", payment.getId())
                 .addKeyValue("wallet.id", walletId).addKeyValue("amount.minor_units", amountMinorUnits)
                 .log("Payment created"));
@@ -99,6 +101,7 @@ public class PaymentService {
         WalletPolicyService.Decision decision=policy.evaluate(wallet,payment,now);
         if (decision.result()==PolicyDecision.DECLINED) {
             payment.decline(decision.reasonCode(),now);
+            outbox.recordPayment(payment,"payment.declined",now);
             logDecline(walletId,payment);
             return payment;
         }
@@ -106,6 +109,7 @@ public class PaymentService {
         long held=holds.sumActiveAmount(walletId, AuthorizationHoldStatus.ACTIVE, now);
         if (payment.getAmountMinorUnits() > balance-held) {
             payment.decline("INSUFFICIENT_AVAILABLE_BALANCE", now);
+            outbox.recordPayment(payment,"payment.declined",now);
             logDecline(walletId,payment);
             return payment;
         }
@@ -113,10 +117,10 @@ public class PaymentService {
         payment.recordGatewayResult(gatewayResult.gatewayPaymentId(),gatewayResult.networkTransactionId(),
                 gatewayResult.issuerResponseCode());
         if(gatewayResult.outcome()==GatewayResult.Outcome.DECLINED){
-            payment.decline("ISSUER_DECLINED",now); logDecline(walletId,payment); return payment;
+            payment.decline("ISSUER_DECLINED",now); outbox.recordPayment(payment,"payment.declined",now); logDecline(walletId,payment); return payment;
         }
         if(gatewayResult.outcome()==GatewayResult.Outcome.TIMEOUT){
-            payment.fail("GATEWAY_TIMEOUT",now); logDecline(walletId,payment); return payment;
+            payment.fail("GATEWAY_TIMEOUT",now); outbox.recordPayment(payment,"payment.authorization_failed",now); logDecline(walletId,payment); return payment;
         }
         Instant expiresAt=now.plusSeconds(authorizationTtlSeconds);
         AuthorizationHold hold=holds.save(new AuthorizationHold(UUID.randomUUID(), wallet,
@@ -127,6 +131,7 @@ public class PaymentService {
                 gatewayResult.outcome()==GatewayResult.Outcome.OTP_REQUIRED ? "OTP_REQUIRED" : decision.reasonCode(),now);
         else payment.authorize(hold.getId(),now);
         String event=pending ? "Payment awaiting approval" : "Payment authorized";
+        outbox.recordPayment(payment,pending?"payment.pending_approval":"payment.authorized",now);
         AfterCommitAction.run(() -> logger.atInfo().addKeyValue("payment.id",paymentId)
                 .addKeyValue("wallet.id",walletId).addKeyValue("authorization_hold.id",hold.getId())
                 .addKeyValue("amount.minor_units",payment.getAmountMinorUnits()).log(event));
@@ -161,6 +166,7 @@ public class PaymentService {
                 new LedgerPostingLine(merchantAccount.getId(), PostingSide.CREDIT, payment.getAmountMinorUnits())));
         hold.capture(now);
         payment.capture(merchantAccount.getId(),idempotencyKey,now);
+        outbox.recordPayment(payment,"payment.captured",now);
         AfterCommitAction.run(() -> logger.atInfo().addKeyValue("payment.id",paymentId)
                 .addKeyValue("wallet.id",walletId).addKeyValue("amount.minor_units",payment.getAmountMinorUnits())
                 .log("Payment captured"));
@@ -187,6 +193,7 @@ public class PaymentService {
         }
         hold.release(now);
         payment.voidPayment(idempotencyKey,now);
+        outbox.recordPayment(payment,"payment.voided",now);
         AfterCommitAction.run(() -> logger.atInfo().addKeyValue("payment.id",paymentId)
                 .addKeyValue("wallet.id",walletId).log("Payment voided"));
         return payment;
@@ -215,6 +222,7 @@ public class PaymentService {
                 new LedgerPostingLine(payment.getMerchantLedgerAccountId(),PostingSide.DEBIT,amountMinorUnits),
                 new LedgerPostingLine(wallet.getLedgerAccount().getId(),PostingSide.CREDIT,amountMinorUnits)));
         payment.refund(amountMinorUnits,clock.instant());
+        outbox.recordPayment(payment,"payment.refunded",clock.instant());
         PaymentRefund refund=refunds.save(new PaymentRefund(refundId,payment,entry,idempotencyKey,amountMinorUnits,clock.instant()));
         AfterCommitAction.run(() -> logger.atInfo().addKeyValue("payment.id",paymentId)
                 .addKeyValue("payment.refund.id",refundId).addKeyValue("amount.minor_units",amountMinorUnits)

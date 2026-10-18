@@ -1,6 +1,6 @@
 # Agent Wallet
 
-Sandbox backend project for learning safe agent spending and payment systems. Phases 1–3 provide an append-only double-entry ledger, ledger-backed wallet funding, and authorization holds with available balance tracking.
+Sandbox backend project for learning safe agent spending and payment systems. Phases 1–8 provide an append-only double-entry ledger, wallet funding, authorization holds, payments, spending policies, a deterministic mock payment flow, and an outbox-backed webhook boundary.
 
 ## Requirements
 
@@ -89,6 +89,14 @@ GET /api/v1/wallets/{walletId}/holds?status=ACTIVE&page=0&size=20 lists active, 
 ## Phase 7 mock payment ecosystem
 
 Payment creation accepts an optional gatewayScenario: APPROVE (default), DECLINE, TIMEOUT, or OTP_REQUIRED. The deterministic in-process gateway routes approved/declined/OTP requests through the mock card network and issuer, and returns gateway payment ID, network transaction ID, and issuer response code. A timeout stops before network routing. No real card data or external payment provider is used. OTP_REQUIRED leaves the payment pending with funds held for the approval flow.
+
+## Phase 8 events and webhooks
+
+- Payment and wallet top-up changes are written to `outbox_events` in the same transaction as the business update. A scheduled worker dispatches committed events and retries failures with backoff, moving events to `DEAD_LETTER` after five failed attempts.
+- `POST /api/v1/webhooks/mock-gateway` accepts a raw JSON body and an `X-Webhook-Signature` header formatted as `sha256=<hex HMAC-SHA256>`. Set `WEBHOOK_SIGNING_SECRET` before starting the app; requests without a configured secret or with an invalid signature are rejected. A repeated valid event ID returns `DUPLICATE` without processing it again.
+- The receiver stores accepted signed webhook payloads for audit and deduplication. It does not call an external gateway or require real payment credentials.
+
+For local signature generation, set the same secret in your shell and use Python's `hmac` module to sign the exact request body bytes. Whitespace changes alter the signature.
 
 ## Run the API smoke suite in Insomnia
 

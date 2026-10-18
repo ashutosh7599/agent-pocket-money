@@ -47,6 +47,7 @@ class PaymentServiceTest {
     @Mock WalletRepository wallets;
     @Mock PaymentRepository payments;
     @Mock MockPaymentGateway gateway;
+    @Mock OutboxService outbox;
     @Mock WalletPolicyService policy;
     @Mock AuthorizationHoldRepository holds;
     @Mock PaymentRefundRepository refunds;
@@ -57,7 +58,7 @@ class PaymentServiceTest {
     private Wallet wallet;
 
     @BeforeEach void setUp() {
-        service=new PaymentService(wallets,payments,holds,gateway,policy,refunds,ledgerAccounts,ledger,Clock.fixed(now, ZoneOffset.UTC),900);
+        service=new PaymentService(wallets,payments,holds,gateway,policy,outbox,refunds,ledgerAccounts,ledger,Clock.fixed(now, ZoneOffset.UTC),900);
         wallet=new Wallet(UUID.randomUUID(),new LedgerAccount("wallet-test","Wallet", AccountType.LIABILITY,"INR"),"INR");
     }
 

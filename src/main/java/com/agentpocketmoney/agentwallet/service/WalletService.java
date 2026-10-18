@@ -46,11 +46,12 @@ public class WalletService {
     private final LedgerService ledger;
     private final AuthorizationHoldRepository holds;
     private final Clock clock;
+    private final OutboxService outbox;
 
     public WalletService(WalletRepository wallets, TopUpRepository topUps,
                          WalletTransactionRepository transactions,
                          LedgerAccountRepository ledgerAccounts,
-                         LedgerService ledger, AuthorizationHoldRepository holds, Clock clock) {
+                         LedgerService ledger, AuthorizationHoldRepository holds, Clock clock, OutboxService outbox) {
         this.wallets = wallets;
         this.topUps = topUps;
         this.transactions = transactions;
@@ -58,6 +59,7 @@ public class WalletService {
         this.ledger = ledger;
         this.holds = holds;
         this.clock = clock;
+        this.outbox = outbox;
     }
 
     @Transactional
@@ -185,6 +187,7 @@ public class WalletService {
                 new LedgerPostingLine(wallet.getLedgerAccount().getId(), PostingSide.CREDIT, amountMinorUnits)));
         TopUp topUp = topUps.save(new TopUp(topUpId, wallet, entry, idempotencyKey,
                 amountMinorUnits, wallet.getCurrency()));
+        outbox.recordWalletTopUp(walletId,topUpId,amountMinorUnits,wallet.getCurrency(),topUp.getCreatedAt());
 
         AfterCommitAction.run(() -> logger.atInfo()
                 .addKeyValue("wallet.id", walletId)
