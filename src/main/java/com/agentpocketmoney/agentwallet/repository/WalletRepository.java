@@ -11,6 +11,7 @@ import org.springframework.data.repository.query.Param;
 import com.agentpocketmoney.agentwallet.model.wallet.Wallet;
 
 public interface WalletRepository extends JpaRepository<Wallet, UUID> {
+    boolean existsByIdAndOwnerId(UUID id, UUID ownerId);
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select wallet from Wallet wallet where wallet.id = :walletId")
     Optional<Wallet> findByIdForUpdate(@Param("walletId") UUID walletId);

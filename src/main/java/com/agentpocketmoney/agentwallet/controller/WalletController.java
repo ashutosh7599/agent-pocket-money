@@ -2,6 +2,8 @@ package com.agentpocketmoney.agentwallet.controller;
 
 import java.net.URI;
 import java.util.UUID;
+import com.agentpocketmoney.agentwallet.security.ApiKeyPrincipal;
+import org.springframework.security.core.Authentication;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
@@ -49,8 +51,10 @@ public class WalletController {
     }
 
     @PostMapping
-    public ResponseEntity<WalletResponse> createWallet() {
-        WalletService.WalletResponseView wallet = wallets.createWallet();
+    public ResponseEntity<WalletResponse> createWallet(Authentication authentication) {
+        ApiKeyPrincipal actor = (ApiKeyPrincipal) authentication.getPrincipal();
+        WalletService.WalletResponseView wallet = wallets.createWallet(
+                actor.userId() == null ? WalletService.SYSTEM_OWNER_ID : actor.userId());
         return ResponseEntity.created(URI.create("/api/v1/wallets/" + wallet.id()))
                 .body(toWalletResponse(wallet));
     }

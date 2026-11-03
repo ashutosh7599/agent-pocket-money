@@ -38,6 +38,7 @@ import com.agentpocketmoney.agentwallet.repository.WalletTransactionRepository;
 public class WalletService {
     public static final String DEFAULT_CURRENCY = "INR";
     public static final String SANDBOX_SETTLEMENT_ACCOUNT_CODE = "sandbox-settlement-inr";
+    public static final UUID SYSTEM_OWNER_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
     private static final Logger logger = LoggerFactory.getLogger(WalletService.class);
     private final WalletRepository wallets;
@@ -66,11 +67,18 @@ public class WalletService {
     @Transactional
     @Audited(action="WALLET_CREATED",entityType="wallet")
     public WalletResponseView createWallet() {
+        return createWallet(SYSTEM_OWNER_ID);
+    }
+
+    @Transactional
+    @Audited(action="WALLET_CREATED",entityType="wallet")
+    public WalletResponseView createWallet(UUID ownerId) {
+        if (ownerId == null) ownerId = SYSTEM_OWNER_ID;
         UUID walletId = UUID.randomUUID();
         LedgerAccount walletLedgerAccount = ledger.createAccount(
                 "wallet-" + walletId, "Wallet " + walletId,
                 AccountType.LIABILITY, DEFAULT_CURRENCY);
-        Wallet wallet = wallets.save(new Wallet(walletId, walletLedgerAccount, DEFAULT_CURRENCY));
+        Wallet wallet = wallets.save(new Wallet(walletId, ownerId, walletLedgerAccount, DEFAULT_CURRENCY));
         AfterCommitAction.run(() -> logger.atInfo()
                 .addKeyValue("wallet.id", walletId)
                 .addKeyValue("currency", DEFAULT_CURRENCY)

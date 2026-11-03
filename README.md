@@ -10,7 +10,9 @@ Sandbox backend project for learning safe agent spending and payment systems. Ph
 
 ## Run
 
-Start PostgreSQL and the OpenTelemetry Collector using Compose, then run the application. Flyway applies the database schema on startup. The collector accepts OTLP over HTTP on port 4318 and prints a compact receipt for exported logs.
+For the local two-command setup, run `./setup.sh` once and then `./run.sh`. Setup installs the MCP Python dependencies in `mcp-server/.venv`, creates a private `.env` with a random local admin API key, copies the empty MCP allowlist, and starts PostgreSQL plus the OpenTelemetry Collector. Run starts the Spring API, waits for its health check, then starts the MCP server. Read the generated admin key from `.env`; it is not printed or committed.
+
+Flyway applies the schema when the API starts. The collector accepts OTLP over HTTP on port 4318 and prints a compact receipt for exported logs.
 
 ```bash
 docker compose up -d postgres otel-collector
@@ -108,7 +110,15 @@ For local signature generation, set the same secret in your shell and use Python
 
 ## Phase 10 security and audit
 
-All `/api/v1/**` endpoints require an API key in the `X-API-Key` header. Configure keys only in the runtime environment using `WALLET_API_KEYS` with comma-separated `key:ROLE[:wallet-uuid]` entries. `ADMIN` keys can administer wallets, funding, policies, audit queries, and reconciliation. `AGENT` keys must include one wallet UUID and can operate only on that wallet's payment and hold endpoints. `WEBHOOK` keys are limited to the mock gateway webhook receiver. Keep these values in a local secret manager or untracked environment file; never commit them.
+All `/api/v1/**` endpoints require an API key in the `X-API-Key` header. Keep bootstrap `ADMIN` and `WEBHOOK` keys in `WALLET_API_KEYS` as comma-separated `key:ROLE` entries. Admin keys manage users, wallet funding and policy, audit queries, and reconciliation. Webhook keys can call only the mock gateway webhook receiver.
+
+Users and agent credentials are stored in PostgreSQL. An administrator provisions a user with `POST /api/v1/admin/users` (`{"username":"alice"}`), then issues a `USER` credential with `POST /api/v1/admin/users/{userId}/credentials` and body `{"role":"USER"}`. The response contains the generated API key once; copy it into a secret manager because only its SHA-256 hash is stored. The user calls `POST /api/v1/wallets` using that key to create an owned wallet. The administrator then issues an `AGENT` credential with `{"role":"AGENT","walletScope":"<wallet-uuid>"}`. An agent key can act only on its assigned wallet, and the database also checks that the wallet belongs to the credential's user. A `USER` key can access all wallets owned by that user. Revoke a key immediately with `DELETE /api/v1/admin/users/{userId}/credentials/{credentialId}`. Each request checks the live credential row, so revocation applies on the next request.
+
+User and agent credentials never appear in application logs or configuration files. Credentials are audit logged by ID/fingerprint, and wallet ownership is persisted on each wallet. Wallets created before ownership support are assigned to a system owner and remain available to admins and legacy wallet-scoped agent keys. New user and agent keys must be created through the admin API.
+
+## Python MCP server
+
+[`mcp-server/README.md`](mcp-server/README.md) documents the Python MCP gateway. It stores wallet-scoped API keys server-side and authenticates each MCP caller with an independent allowlisted bearer token. Each allowed agent can be limited to exact wallets and tools.
 
 Successful wallet, hold, payment, policy, and reconciliation operations write append-only audit rows with the actor key fingerprint, action, entity ID, trace ID, and timestamp. Admins can inspect them at `GET /api/v1/admin/audit-events?page=0&size=20`.
 

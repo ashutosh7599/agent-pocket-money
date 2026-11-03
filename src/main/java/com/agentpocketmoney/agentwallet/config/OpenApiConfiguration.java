@@ -13,5 +13,5 @@ import org.springframework.context.annotation.Configuration;
         description="Sandbox wallet, payments, settlement and agent spending API."),
         security=@SecurityRequirement(name="apiKeyAuth"))
 @SecurityScheme(name="apiKeyAuth",type=SecuritySchemeType.APIKEY,in=SecuritySchemeIn.HEADER,
-        paramName="X-API-Key",description="Use an API key assigned to an ADMIN, AGENT, or WEBHOOK role.")
+        paramName="X-API-Key",description="Use an admin/webhook environment key or a user/agent credential issued by an administrator. Agent credentials are scoped to one wallet.")
 public class OpenApiConfiguration {}

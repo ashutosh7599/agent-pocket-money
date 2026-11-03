@@ -14,7 +14,8 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @Configuration
 public class SecurityConfiguration {
     @Bean
-    ApiKeyAuthenticationFilter apiKeyAuthenticationFilter(ApiKeyRegistry keys){return new ApiKeyAuthenticationFilter(keys);}
+    ApiKeyAuthenticationFilter apiKeyAuthenticationFilter(ApiKeyRegistry keys,
+            com.agentpocketmoney.agentwallet.repository.WalletRepository wallets){return new ApiKeyAuthenticationFilter(keys,wallets);}
     @Bean
     UserDetailsService disablePasswordAuthentication(){return username->{throw new UsernameNotFoundException("Password authentication is disabled.");};}
     @Bean
@@ -33,7 +34,7 @@ public class SecurityConfiguration {
                 .authorizeHttpRequests(auth->auth
                         .requestMatchers("/actuator/health/**","/swagger-ui.html","/swagger-ui/**","/v3/api-docs/**").permitAll()
                         .requestMatchers(HttpMethod.POST,"/api/v1/webhooks/**").hasAnyRole("WEBHOOK","ADMIN")
-                        .requestMatchers(HttpMethod.POST,"/api/v1/wallets").hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.POST,"/api/v1/wallets").hasAnyRole("ADMIN","USER")
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.PUT,"/api/v1/wallets/*/policy").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST,"/api/v1/wallets/*/top-ups").hasRole("ADMIN")
@@ -41,7 +42,7 @@ public class SecurityConfiguration {
                         .requestMatchers(HttpMethod.POST,"/api/v1/wallets/*/payments/*/approve").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.POST,"/api/v1/wallets/*/payments/*/reject").hasRole("ADMIN")
                         .requestMatchers("/api/v1/reconciliation/**").hasRole("ADMIN")
-                        .requestMatchers("/api/v1/**").hasAnyRole("ADMIN","AGENT")
+                        .requestMatchers("/api/v1/**").hasAnyRole("ADMIN","AGENT","USER")
                         .anyRequest().permitAll())
                 .addFilterBefore(apiKeys,UsernamePasswordAuthenticationFilter.class)
                 .build();

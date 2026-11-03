@@ -1,4 +1,10 @@
 /target/
+.env
 *.log
 .idea/
 .vscode/
+/mcp-server/.venv/
+/mcp-server/.env
+/mcp-server/agents.json
+__pycache__/
+*.py[cod]
