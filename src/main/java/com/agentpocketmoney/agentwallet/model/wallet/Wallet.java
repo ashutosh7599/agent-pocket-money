@@ -21,6 +21,9 @@ public class Wallet {
     @Id
     private UUID id;
 
+    @Column(name = "owner_id", nullable = false, updatable = false)
+    private UUID ownerId;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "ledger_account_id", nullable = false, unique = true, updatable = false)
     private LedgerAccount ledgerAccount;
@@ -37,15 +40,21 @@ public class Wallet {
 
     protected Wallet() {}
 
-    public Wallet(UUID id, LedgerAccount ledgerAccount, String currency) {
+    public Wallet(UUID id, UUID ownerId, LedgerAccount ledgerAccount, String currency) {
         this.id = id;
+        this.ownerId = ownerId;
         this.ledgerAccount = ledgerAccount;
         this.currency = currency;
         this.status = WalletStatus.ACTIVE;
         this.createdAt = Instant.now().truncatedTo(ChronoUnit.MICROS);
     }
 
+    public Wallet(UUID id, LedgerAccount ledgerAccount, String currency) {
+        this(id, UUID.fromString("00000000-0000-0000-0000-000000000001"), ledgerAccount, currency);
+    }
+
     public UUID getId() { return id; }
+    public UUID getOwnerId() { return ownerId; }
     public LedgerAccount getLedgerAccount() { return ledgerAccount; }
     public WalletStatus getStatus() { return status; }
     public String getCurrency() { return currency; }

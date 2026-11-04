@@ -2,6 +2,8 @@ package com.agentpocketmoney.agentwallet.controller;
 
 import java.net.URI;
 import java.util.UUID;
+import com.agentpocketmoney.agentwallet.security.ApiKeyPrincipal;
+import org.springframework.security.core.Authentication;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
@@ -14,14 +16,24 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.agentpocketmoney.agentwallet.dto.AuthorizationHoldPage;
+import com.agentpocketmoney.agentwallet.dto.AuthorizationHoldResponse;
+import com.agentpocketmoney.agentwallet.dto.CreateAuthorizationHoldRequest;
+import com.agentpocketmoney.agentwallet.dto.CreatePaymentRequest;
+import com.agentpocketmoney.agentwallet.dto.PaymentResponse;
+import com.agentpocketmoney.agentwallet.dto.RefundRequest;
+import com.agentpocketmoney.agentwallet.dto.RefundResponse;
 import com.agentpocketmoney.agentwallet.dto.TopUpRequest;
 import com.agentpocketmoney.agentwallet.dto.TopUpResponse;
 import com.agentpocketmoney.agentwallet.dto.WalletResponse;
 import com.agentpocketmoney.agentwallet.dto.WalletTransactionPage;
 import com.agentpocketmoney.agentwallet.dto.WalletTransactionResponse;
+import com.agentpocketmoney.agentwallet.model.wallet.AuthorizationHold;
+import com.agentpocketmoney.agentwallet.model.wallet.AuthorizationHoldStatus;
 import com.agentpocketmoney.agentwallet.model.wallet.TopUpResult;
 import com.agentpocketmoney.agentwallet.exception.WalletErrorCode;
 import com.agentpocketmoney.agentwallet.exception.WalletException;
+import com.agentpocketmoney.agentwallet.service.PaymentService;
 import com.agentpocketmoney.agentwallet.service.WalletService;
 import com.agentpocketmoney.agentwallet.model.wallet.WalletTransactionRecord;
 
@@ -31,14 +43,18 @@ import jakarta.validation.Valid;
 @RequestMapping("/api/v1/wallets")
 public class WalletController {
     private final WalletService wallets;
+    private final PaymentService payments;
 
-    public WalletController(WalletService wallets) {
+    public WalletController(WalletService wallets, PaymentService payments) {
         this.wallets = wallets;
+        this.payments = payments;
     }
 
     @PostMapping
-    public ResponseEntity<WalletResponse> createWallet() {
-        WalletService.WalletResponseView wallet = wallets.createWallet();
+    public ResponseEntity<WalletResponse> createWallet(Authentication authentication) {
+        ApiKeyPrincipal actor = (ApiKeyPrincipal) authentication.getPrincipal();
+        WalletService.WalletResponseView wallet = wallets.createWallet(
+                actor.userId() == null ? WalletService.SYSTEM_OWNER_ID : actor.userId());
         return ResponseEntity.created(URI.create("/api/v1/wallets/" + wallet.id()))
                 .body(toWalletResponse(wallet));
     }
@@ -46,6 +62,85 @@ public class WalletController {
     @GetMapping("/{walletId}")
     public WalletResponse getWallet(@PathVariable UUID walletId) {
         return toWalletResponse(wallets.getWallet(walletId));
+    }
+
+    @PostMapping("/{walletId}/holds")
+    public ResponseEntity<AuthorizationHoldResponse> createHold(@PathVariable UUID walletId,
+            @Valid @RequestBody CreateAuthorizationHoldRequest request) {
+        AuthorizationHold hold = wallets.createHold(walletId, request.amountMinorUnits(), request.expiresAt());
+        URI location = URI.create("/api/v1/wallets/" + walletId + "/holds/" + hold.getId());
+        return ResponseEntity.created(location).body(AuthorizationHoldResponse.from(hold));
+    }
+
+    @GetMapping("/{walletId}/holds")
+    public AuthorizationHoldPage listHolds(@PathVariable UUID walletId,
+            @RequestParam(required = false, defaultValue = "ACTIVE") AuthorizationHoldStatus status,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        if (page < 0 || size < 1 || size > 100) {
+            throw new WalletException(WalletErrorCode.INVALID_WALLET_REQUEST,
+                    "Page must be non-negative and size must be between 1 and 100.");
+        }
+        Page<AuthorizationHold> result = wallets.listHolds(walletId, status, PageRequest.of(page, size));
+        return new AuthorizationHoldPage(result.getContent().stream()
+                .map(AuthorizationHoldResponse::from).toList(), result.getNumber(), result.getSize(),
+                result.getTotalElements(), result.getTotalPages());
+    }
+
+    @PostMapping("/{walletId}/holds/{holdId}/release")
+    public AuthorizationHoldResponse releaseHold(@PathVariable UUID walletId, @PathVariable UUID holdId) {
+        return AuthorizationHoldResponse.from(wallets.releaseHold(walletId, holdId));
+    }
+
+    @PostMapping("/{walletId}/payments")
+    public ResponseEntity<PaymentResponse> createPayment(@PathVariable UUID walletId,
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @Valid @RequestBody CreatePaymentRequest request) {
+        var payment = payments.create(walletId, idempotencyKey, request.merchantId(),
+                request.amountMinorUnits(), request.category(), request.purpose(), request.gatewayScenario());
+        return ResponseEntity.created(URI.create("/api/v1/wallets/" + walletId + "/payments/" + payment.getId()))
+                .body(PaymentResponse.from(payment));
+    }
+
+    @PostMapping("/{walletId}/payments/{paymentId}/authorize")
+    public PaymentResponse authorizePayment(@PathVariable UUID walletId, @PathVariable UUID paymentId) {
+        return PaymentResponse.from(payments.authorize(walletId, paymentId));
+    }
+
+    @PostMapping("/{walletId}/payments/{paymentId}/approve")
+    public PaymentResponse approvePayment(@PathVariable UUID walletId,@PathVariable UUID paymentId,
+            @RequestHeader("Idempotency-Key") String idempotencyKey){
+        return PaymentResponse.from(payments.approvePending(walletId,paymentId,idempotencyKey));
+    }
+
+    @PostMapping("/{walletId}/payments/{paymentId}/reject")
+    public PaymentResponse rejectPayment(@PathVariable UUID walletId,@PathVariable UUID paymentId,
+            @RequestHeader("Idempotency-Key") String idempotencyKey){
+        return PaymentResponse.from(payments.rejectPending(walletId,paymentId,idempotencyKey));
+    }
+
+    @PostMapping("/{walletId}/payments/{paymentId}/capture")
+    public PaymentResponse capturePayment(@PathVariable UUID walletId, @PathVariable UUID paymentId,
+            @RequestHeader("Idempotency-Key") String idempotencyKey) {
+        return PaymentResponse.from(payments.capture(walletId,paymentId,idempotencyKey));
+    }
+
+    @PostMapping("/{walletId}/payments/{paymentId}/void")
+    public PaymentResponse voidPayment(@PathVariable UUID walletId, @PathVariable UUID paymentId,
+            @RequestHeader("Idempotency-Key") String idempotencyKey) {
+        return PaymentResponse.from(payments.voidPayment(walletId,paymentId,idempotencyKey));
+    }
+
+    @PostMapping("/{walletId}/payments/{paymentId}/refunds")
+    public RefundResponse refundPayment(@PathVariable UUID walletId, @PathVariable UUID paymentId,
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            @Valid @RequestBody RefundRequest request) {
+        return RefundResponse.from(payments.refund(walletId,paymentId,idempotencyKey,request.amountMinorUnits()));
+    }
+
+    @GetMapping("/{walletId}/payments/{paymentId}")
+    public PaymentResponse getPayment(@PathVariable UUID walletId, @PathVariable UUID paymentId) {
+        return PaymentResponse.from(payments.get(walletId, paymentId));
     }
 
     @PostMapping("/{walletId}/top-ups")
@@ -72,7 +167,8 @@ public class WalletController {
 
     private static WalletResponse toWalletResponse(WalletService.WalletResponseView wallet) {
         return new WalletResponse(wallet.id(), wallet.status(), wallet.currency(),
-                wallet.balanceMinorUnits(), wallet.createdAt());
+                wallet.balanceMinorUnits(), wallet.heldBalanceMinorUnits(),
+                wallet.availableBalanceMinorUnits(), wallet.createdAt());
     }
 
     private static WalletTransactionResponse toTransaction(WalletTransactionRecord transaction) {

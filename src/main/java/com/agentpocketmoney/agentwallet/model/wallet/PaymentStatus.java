@@ -1,0 +1,3 @@
+package com.agentpocketmoney.agentwallet.model.wallet;
+public enum PaymentStatus { CREATED, AUTHORIZED, PENDING_APPROVAL, DECLINED, AUTHORIZATION_FAILED,
+ CAPTURED, VOIDED, PARTIALLY_REFUNDED, REFUNDED, EXPIRED }

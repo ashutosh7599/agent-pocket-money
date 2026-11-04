@@ -1,6 +1,6 @@
 # Agent Wallet
 
-Sandbox backend project for learning safe agent spending and payment systems. Phases 1 and 2 provide an append-only double-entry ledger and ledger-backed wallet funding.
+Sandbox backend project for learning safe agent spending and payment systems. Phases 1–8 provide an append-only double-entry ledger, wallet funding, authorization holds, payments, spending policies, a deterministic mock payment flow, and an outbox-backed webhook boundary.
 
 ## Requirements
 
@@ -10,15 +10,19 @@ Sandbox backend project for learning safe agent spending and payment systems. Ph
 
 ## Run
 
-Start PostgreSQL and the OpenTelemetry Collector using Compose, then run the application. Flyway creates the ledger schema on startup. The collector accepts OTLP over HTTP on port 4318 and prints a compact receipt for exported logs.
+For the local two-command setup, run `./setup.sh` once and then `./run.sh`. Setup installs the MCP Python dependencies in `mcp-server/.venv`, creates a private `.env` with a random local admin API key, copies the empty MCP allowlist, and starts PostgreSQL plus the OpenTelemetry Collector. Run starts the Spring API, waits for its health check, then starts the MCP server. Read the generated admin key from `.env`; it is not printed or committed.
+
+Flyway applies the schema when the API starts. The collector accepts OTLP over HTTP on port 4318 and prints a compact receipt for exported logs.
 
 ```bash
 docker compose up -d postgres otel-collector
-mvn spring-boot:run
+WALLET_API_KEYS='<admin-key>:ADMIN' mvn spring-boot:run
 ```
 
 The default local database settings match `docker-compose.yml`. Override them with `DATABASE_URL`, `DATABASE_USERNAME`, and `DATABASE_PASSWORD` as needed.
 Set `OTEL_EXPORTER_OTLP_ENDPOINT` to point at a different collector. Logs and traces are exported over OTLP HTTP; metrics are disabled for now.
+
+Swagger UI is available at `http://localhost:8080/swagger-ui.html`; the OpenAPI JSON is at `/v3/api-docs`. Use the **Authorize** button to enter an API key. The public health endpoint is `/actuator/health` and includes the PostgreSQL readiness check. Docker Compose also marks PostgreSQL healthy after `pg_isready` succeeds.
 
 ## Package layout
 
@@ -32,7 +36,7 @@ Application code lives under `com.agentpocketmoney.agentwallet` and is grouped b
 - `service` contains business operations.
 - `config` contains application configuration and startup hooks.
 
-Run the ledger unit tests with:
+Run the unit and safety tests with:
 
 ```bash
 mvn test
@@ -53,17 +57,86 @@ The ledger core is exposed through the application service and the wallet routes
 ## Phase 2 wallet API
 
 - `POST /api/v1/wallets` creates an active INR wallet.
-- `GET /api/v1/wallets/{walletId}` returns status and balance calculated from the ledger.
+- `GET /api/v1/wallets/{walletId}` returns ledger balance, active held amount, and available balance.
 - `POST /api/v1/wallets/{walletId}/top-ups` funds the wallet from the simulated settlement account. Send an `Idempotency-Key` header and a JSON body such as `{"amountMinorUnits":65000}`.
 - `GET /api/v1/wallets/{walletId}/transactions?page=0&size=20` returns ledger-backed wallet history; page size is limited to 100.
 
 Top-up retries with the same wallet, key, and amount return the original result. Reusing a key with a different amount returns `409 Conflict`. Top-ups are recorded as debit-to-settlement and credit-to-wallet journal lines in the same database transaction. Wallet balance is not cached.
 
+## Phase 3 authorization holds
+
+GET /api/v1/wallets/{walletId}/holds?status=ACTIVE&page=0&size=20 lists active, unexpired holds by default. Set status to RELEASED or EXPIRED to inspect history, then use a listed hold ID in the release request.
+
+- `POST /api/v1/wallets/{walletId}/holds` reserves available funds. Send `{"amountMinorUnits":20000,"expiresAt":"<future ISO-8601 timestamp>"}`. The response is `201 Created` with an `ACTIVE` hold.
+- `POST /api/v1/wallets/{walletId}/holds/{holdId}/release` releases an active hold. Releasing an already released or expired hold is safe and returns its current state.
+- `GET /api/v1/wallets/{walletId}` keeps `balanceMinorUnits` as the ledger balance and includes `heldBalanceMinorUnits` and `availableBalanceMinorUnits`. Only active, unexpired holds count against available funds.
+- A scheduled worker expires due holds every 30 seconds by default. Wallet reads and hold operations also expire due holds for that wallet. Configure `wallet.holds.expiry-poll-interval-ms` to change the poll interval.
+
+## Phase 4 payment authorization
+
+- POST /api/v1/wallets/{walletId}/payments creates a payment in CREATED state. Send an Idempotency-Key header and merchant, amount, category, and purpose. Matching retries return the original payment; a changed request with the same key returns HTTP 409.
+- POST /api/v1/wallets/{walletId}/payments/{paymentId}/authorize authorizes the payment and reserves funds with an expiring hold. Repeated authorization requests return the same payment state without creating another hold. Insufficient available balance declines the payment.
+- GET /api/v1/wallets/{walletId}/payments/{paymentId} returns the wallet-scoped payment state.
+
+## Phase 6 policy engine
+
+- PUT /api/v1/wallets/{walletId}/policy replaces the wallet's allowed merchant IDs, per-transaction/daily/monthly limits, category budgets, velocity window, and manual approval threshold.
+- Authorization is deny-by-default: merchants must appear in the allowlist. Policy checks return reason codes for merchant, transaction, daily/monthly, category, or velocity declines. Transactions at or above the approval threshold become PENDING_APPROVAL and reserve funds.
+- Every evaluation is persisted with its result and reason. Configure the policy before authorizing payments.
+
+## Phase 5 capture, void, and refund
+
+- POST /api/v1/wallets/{walletId}/payments/{paymentId}/capture consumes an active authorization hold and posts a balanced debit to the wallet liability and credit to a merchant payable account. Retry with the same Idempotency-Key to receive the existing captured payment.
+- POST /api/v1/wallets/{walletId}/payments/{paymentId}/void releases an active hold without changing ledger balance. Retry with the same Idempotency-Key safely returns the voided payment.
+- POST /api/v1/wallets/{walletId}/payments/{paymentId}/refunds accepts a positive amountMinorUnits value and an Idempotency-Key. Partial refunds are supported; the total cannot exceed the captured amount. Each refund posts balanced merchant-payable debit and wallet-liability credit lines.
+
+## Phase 7 mock payment ecosystem
+
+Payment creation accepts an optional gatewayScenario: APPROVE (default), DECLINE, TIMEOUT, or OTP_REQUIRED. The deterministic in-process gateway routes approved/declined/OTP requests through the mock card network and issuer, and returns gateway payment ID, network transaction ID, and issuer response code. A timeout stops before network routing. No real card data or external payment provider is used. OTP_REQUIRED leaves the payment pending with funds held for the approval flow.
+
+## Phase 8 events and webhooks
+
+- Payment and wallet top-up changes are written to `outbox_events` in the same transaction as the business update. A scheduled worker dispatches committed events and retries failures with backoff, moving events to `DEAD_LETTER` after five failed attempts.
+- `POST /api/v1/webhooks/mock-gateway` accepts a raw JSON body and an `X-Webhook-Signature` header formatted as `sha256=<hex HMAC-SHA256>`. Set `WEBHOOK_SIGNING_SECRET` before starting the app; requests without a configured secret or with an invalid signature are rejected. A repeated valid event ID returns `DUPLICATE` without processing it again.
+- The receiver stores accepted signed webhook payloads for audit and deduplication. It does not call an external gateway or require real payment credentials.
+
+For local signature generation, set the same secret in your shell and use Python's `hmac` module to sign the exact request body bytes. Whitespace changes alter the signature.
+
+## Phase 9 reconciliation
+
+- `POST /api/v1/reconciliation/batches` reconciles a JSON array of settlement rows (`paymentId`, `amountMinorUnits`, `status`) against captured/refunded payments and persists the batch and any breaks.
+- `POST /api/v1/reconciliation/mock-batches?scenario=MATCH` generates a matching report. Use `MISSING`, `AMOUNT_MISMATCH`, `STATUS_MISMATCH`, or `UNKNOWN_PAYMENT` to exercise break detection.
+- `GET /api/v1/reconciliation/batches/{batchId}` reads a persisted batch; `GET /api/v1/reconciliation/batches/{batchId}/breaks` returns its stored breaks.
+
+## Phase 10 security and audit
+
+All `/api/v1/**` endpoints require an API key in the `X-API-Key` header. Keep bootstrap `ADMIN` and `WEBHOOK` keys in `WALLET_API_KEYS` as comma-separated `key:ROLE` entries. Admin keys manage users, wallet funding and policy, audit queries, and reconciliation. Webhook keys can call only the mock gateway webhook receiver.
+
+Users and agent credentials are stored in PostgreSQL. An administrator provisions a user with `POST /api/v1/admin/users` (`{"username":"alice"}`), then issues a `USER` credential with `POST /api/v1/admin/users/{userId}/credentials` and body `{"role":"USER"}`. The response contains the generated API key once; copy it into a secret manager because only its SHA-256 hash is stored. The user calls `POST /api/v1/wallets` using that key to create an owned wallet. The administrator then issues an `AGENT` credential with `{"role":"AGENT","walletScope":"<wallet-uuid>"}`. An agent key can act only on its assigned wallet, and the database also checks that the wallet belongs to the credential's user. A `USER` key can access all wallets owned by that user. Revoke a key immediately with `DELETE /api/v1/admin/users/{userId}/credentials/{credentialId}`. Each request checks the live credential row, so revocation applies on the next request.
+
+User and agent credentials never appear in application logs or configuration files. Credentials are audit logged by ID/fingerprint, and wallet ownership is persisted on each wallet. Wallets created before ownership support are assigned to a system owner and remain available to admins and legacy wallet-scoped agent keys. New user and agent keys must be created through the admin API.
+
+## Python MCP server
+
+[`mcp-server/README.md`](mcp-server/README.md) documents the Python MCP gateway. It stores wallet-scoped API keys server-side and authenticates each MCP caller with an independent allowlisted bearer token. Each allowed agent can be limited to exact wallets and tools.
+
+Successful wallet, hold, payment, policy, and reconciliation operations write append-only audit rows with the actor key fingerprint, action, entity ID, trace ID, and timestamp. Admins can inspect them at `GET /api/v1/admin/audit-events?page=0&size=20`.
+
+## Phase 11 agent payment interface
+
+- An admin creates a one-time spend mandate under a wallet with purpose, merchant, category, currency, maximum amount, and expiry.
+- An agent requests payment using `POST /api/v1/wallets/{walletId}/mandates/{mandateId}/payments` and an `Idempotency-Key`. The API enforces the mandate, creates and authorizes the payment, and returns the resulting payment state. A repeated request with the same key returns the same payment; a different request cannot reuse the consumed mandate.
+- Payments awaiting manual/OTP approval can be approved or rejected by an admin using the wallet payment `/approve` or `/reject` routes with an `Idempotency-Key`. Rejection releases the authorization hold.
+
+## Phase 12 safety checks
+
+The automated suite includes PostgreSQL/Testcontainers concurrency tests for wallet double-spend prevention, duplicate idempotency retries, concurrent authorization, webhook replay, and reconciliation persistence. Run `mvn test`; the database integration cases run where Docker is available to Testcontainers and skip if no usable Docker endpoint is found. The live stress run and its results are in [`api-tests/phase12-safety-test-report.md`](api-tests/phase12-safety-test-report.md).
+
 ## Run the API smoke suite in Insomnia
 
-Import [`api-tests/insomnia-agent-wallet-phase-2.json`](api-tests/insomnia-agent-wallet-phase-2.json) into Insomnia, open the imported collection, choose **Run Collection**, keep all requests selected in order, and click **Run**. The suite creates a wallet, funds it, verifies its balance and transaction history, checks top-up idempotency, and confirms invalid requests return safe errors. The collection saves generated wallet and idempotency values between requests.
+Import [`api-tests/insomnia-agent-wallet-phase-2.json`](api-tests/insomnia-agent-wallet-phase-2.json) into Insomnia, open the imported collection, choose **Run Collection**, keep all requests selected in order, and click **Run**. The suite creates a wallet, funds it, verifies ledger and available balances, creates, lists, and releases a hold, checks policy setup, payment authorization, capture, partial/full refund, gateway outcomes, and idempotency, insufficient available balance, and invalid requests. The collection saves generated wallet and idempotency values between requests.
 
-The included environment targets `http://localhost:8080` and funds the wallet with 65000 minor units (₹650.00). Change `base_url` if the app uses a different port. Each run creates new sandbox data in PostgreSQL; no real money is moved. See [`api-tests/README.md`](api-tests/README.md) for setup details.
+The included environment targets `http://localhost:8080`, includes a blank `api_key` variable, and funds the wallet with 65000 minor units (₹650.00). Set `api_key` to an admin key for the full suite and change `base_url` if the app uses a different port. Each run creates new sandbox data in PostgreSQL; no real money is moved. See [`api-tests/README.md`](api-tests/README.md) for setup details.
 
 ## Logging and exception handling
 
